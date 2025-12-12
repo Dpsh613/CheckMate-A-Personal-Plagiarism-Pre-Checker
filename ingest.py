@@ -1,74 +1,5 @@
-# import os
-# import chromadb
-# from sentence_transformers import SentenceTransformer
-# from utils import extract_text_from_pdf, clean_text, chunk_text
-# from tqdm import tqdm
-
-# # --- CONFIGURATION ---
-# DATA_FOLDER = "dataset_pdfs"  # Put your 700 books here
-# DB_PATH = "./my_plagiarism_db" # Where the database file is saved
-# COLLECTION_NAME = "condensed_matter" # CHANGE THIS when swapping subjects!
-# # ---------------------
-
-# def create_database():
-#     # 1. Initialize AI Model and Database
-#     print("Loading AI Model...")
-#     model = SentenceTransformer('all-MiniLM-L6-v2')
-    
-#     client = chromadb.PersistentClient(path=DB_PATH)
-    
-#     # Delete collection if it exists (to start fresh) or get existing
-#     try:
-#         client.delete_collection(name=COLLECTION_NAME)
-#         print(f"Deleted old collection: {COLLECTION_NAME}")
-#     except:
-#         pass
-    
-#     collection = client.create_collection(name=COLLECTION_NAME)
-
-#     # 2. Process PDFs
-#     pdf_files = [f for f in os.listdir(DATA_FOLDER) if f.endswith('.pdf')]
-    
-#     if not pdf_files:
-#         print(f"No PDFs found in {DATA_FOLDER}")
-#         return
-
-#     print(f"Processing {len(pdf_files)} books into '{COLLECTION_NAME}' database...")
-
-#     for filename in tqdm(pdf_files):
-#         file_path = os.path.join(DATA_FOLDER, filename)
-        
-#         # A. Extract
-#         raw_text = extract_text_from_pdf(file_path)
-#         clean_raw_text = clean_text(raw_text)
-        
-#         # B. Chunk
-#         chunks = chunk_text(clean_raw_text)
-        
-#         if not chunks:
-#             continue
-
-#         # C. Embed (Convert text to numbers) & Add to DB
-#         # We process in batches to be memory efficient
-#         ids = [f"{filename}_chunk_{i}" for i in range(len(chunks))]
-#         metadatas = [{"source": filename, "chunk_id": i} for i in range(len(chunks))]
-#         embeddings = model.encode(chunks).tolist()
-        
-#         collection.add(
-#             embeddings=embeddings,
-#             documents=chunks,
-#             metadatas=metadatas,
-#             ids=ids
-#         )
-
-#     print(f"✅ Success! Database '{COLLECTION_NAME}' is ready.")
-
-# if __name__ == "__main__":
-#     create_database()
-
 import os
 import chromadb
-from chromadb.config import Settings
 from sentence_transformers import SentenceTransformer
 from utils import extract_text_with_metadata, chunk_text_with_page_mapping
 from tqdm import tqdm
@@ -76,58 +7,70 @@ from tqdm import tqdm
 # --- CONFIGURATION ---
 DATA_FOLDER = "dataset_pdfs"
 DB_PATH = "./my_plagiarism_db"
-# CHANGE THIS NAME for different subjects (e.g., "lie_algebra", "condensed_matter")
 COLLECTION_NAME = "condensed_matter" 
+BATCH_SIZE = 100
 # --------------------------
 
-def create_database():
+def update_database():
     model = SentenceTransformer('all-MiniLM-L6-v2')
     client = chromadb.PersistentClient(path=DB_PATH)
+    collection = client.get_or_create_collection(name=COLLECTION_NAME, metadata={"hnsw:space": "cosine"})
 
-    # Reset collection to ensure clean slate for this subject
-    try:
-        client.delete_collection(name=COLLECTION_NAME)
-    except:
-        pass
+    all_pdf_files = [f for f in os.listdir(DATA_FOLDER) if f.endswith('.pdf')]
     
-    # Enforce Cosine distance for accurate similarity percentages
-    collection = client.create_collection(
-        name=COLLECTION_NAME,
-        metadata={"hnsw:space": "cosine"} 
-    )
+    # --- STEP 1: IDENTIFY NEW FILES ---
+    # We do a quick check to see which files are NOT in the DB yet.
+    print("Scanning database for existing files...")
+    
+    files_to_process = []
+    for filename in all_pdf_files:
+        existing = collection.get(where={"source": filename}, limit=1)
+        if len(existing['ids']) == 0:
+            files_to_process.append(filename)
 
-    pdf_files = [f for f in os.listdir(DATA_FOLDER) if f.endswith('.pdf')]
-    print(f"Processing {len(pdf_files)} books for subject: '{COLLECTION_NAME}'...")
+    if len(files_to_process) == 0:
+        print("✅ No new files to add. Database is up to date!")
+        return
 
-    for filename in tqdm(pdf_files):
+    print(f"Found {len(files_to_process)} new files to process.")
+
+    # --- STEP 2: PROCESS ONLY NEW FILES ---
+    # The progress bar now only reflects the actual work to be done
+    for filename in tqdm(files_to_process):
+        
         file_path = os.path.join(DATA_FOLDER, filename)
         
-        # 1. Extract with Page Numbers
+        # 1. Extract
         pages_data = extract_text_with_metadata(file_path)
         
         # 2. Chunk
         chunks_data = chunk_text_with_page_mapping(pages_data)
         
         if not chunks_data:
+            print(f"Warning: No text found in {filename}")
             continue
 
-        # 3. Prepare Data for DB
-        documents = [item['text'] for item in chunks_data]
-        metadatas = [{"source": filename, "page": item['page']} for item in chunks_data]
-        ids = [f"{filename}_{i}" for i in range(len(chunks_data))]
+        # 3. Prepare Data
+        full_documents = [item['text'] for item in chunks_data]
+        full_metadatas = [{"source": filename, "page": item['page']} for item in chunks_data]
+        full_ids = [f"{filename}_{i}" for i in range(len(chunks_data))]
         
-        # 4. Embed and Add (Batch processing automatically handled by Chroma usually, 
-        # but manual batching is safer for 700 books. Here we do file-by-file).
-        embeddings = model.encode(documents).tolist()
-        
-        collection.add(
-            embeddings=embeddings,
-            documents=documents,
-            metadatas=metadatas,
-            ids=ids
-        )
+        # 4. Batch Add
+        for i in range(0, len(full_documents), BATCH_SIZE):
+            batch_docs = full_documents[i : i + BATCH_SIZE]
+            batch_metas = full_metadatas[i : i + BATCH_SIZE]
+            batch_ids = full_ids[i : i + BATCH_SIZE]
+            
+            batch_embeddings = model.encode(batch_docs).tolist()
+            
+            collection.add(
+                embeddings=batch_embeddings,
+                documents=batch_docs,
+                metadatas=batch_metas,
+                ids=batch_ids
+            )
 
-    print(f"✅ Database for '{COLLECTION_NAME}' is ready!")
+    print(f"✅ Successfully added {len(files_to_process)} new documents!")
 
 if __name__ == "__main__":
-    create_database()
+    update_database()

@@ -94,7 +94,7 @@ def extract_text_with_metadata(pdf_path):
     return pages_data
 
 # --- CHUNKING FUNCTION  ---
-def chunk_text_with_page_mapping(pages_data, chunk_size=100, overlap=5):
+def chunk_text_with_page_mapping(pages_data, chunk_size=100, overlap=25):
     """
     Splits text into sliding windows but keeps track of the page number.
     """
@@ -113,7 +113,7 @@ def chunk_text_with_page_mapping(pages_data, chunk_size=100, overlap=5):
             chunk_text = " ".join(chunk_words)
             
             # Only keep chunks that are substantial enough
-            if len(chunk_words) > 5:
+            if len(chunk_words) > 25:
                 chunks_with_meta.append({
                     "text": chunk_text,
                     "page": page_num
