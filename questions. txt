@@ -1,0 +1,23 @@
+1. reason for doing 'import fitz and not doing 'import pymupdf 
+2. whats re
+3. ignore 3 words
+4. biblioography
+
+1. pymupdf -
+ high performanc epython library used for - 
+     PDf manipulation (open,modify,save)
+     Data Extraction (text,image,metadata)
+     Conversion (pdf to image)
+     Analysis (advance layout analysis)
+     Splitting (combining pdfs)
+
+(It is the industry standard for **high-performance** PDF processing today,`import fitz` is what 99% of developers and tutorials still use)
+
+2. re - regular expressions
+used for advanced pattern matching, to clean and remove unwanted symbols (like `@#$%`) or fix messy spacing logic that simple string replacement cannot handle
+
+(Reason for using re: Using an AI model to strip extra spaces or punctuation is slow and expensive. `re` does it in microseconds. It remains the best tool for text cleaning)
+
+3. BLOCKS IN PyMuPDF: PyMuPDF has a superpower called `"blocks"`. Instead of asking for "text," we ask for "blocks." This tells the computer: Identify the chunks of text that are grouped together visually (like paragraphs or columns), and give them to me one group at a time.This forces the computer to finish the left column before it even looks at the right column.
+
+4.  enumurate function - it returns a sequence of index and items (tupel) when looping over the object, like list. 
