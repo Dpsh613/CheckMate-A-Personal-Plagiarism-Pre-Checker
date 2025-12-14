@@ -8,7 +8,7 @@ from tqdm import tqdm
 DATA_FOLDER = "dataset_pdfs"
 DB_PATH = "./my_plagiarism_db"
 COLLECTION_NAME = "condensed_matter" 
-BATCH_SIZE = 100
+BATCH_SIZE = 100  # 100 CHUNKS
 # --------------------------
 
 def update_database():

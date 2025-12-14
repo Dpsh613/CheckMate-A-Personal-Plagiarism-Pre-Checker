@@ -1,5 +1,7 @@
 import chromadb
 from sentence_transformers import SentenceTransformer
+from transformers import pipeline 
+import torch 
 from utils import extract_text_with_metadata, chunk_text_with_page_mapping
 import os
 from difflib import SequenceMatcher
@@ -9,29 +11,45 @@ import re
 DB_PATH = "./my_plagiarism_db"
 COLLECTION_NAME = "condensed_matter"
 
-# --- TUNED THRESHOLDS ---
-# 1. Semantic Threshold (Distance):
-#    0.30 was too strict (missed your 69% match). 
-#    We change it to 0.38 (allows matches down to ~62%).
-SEMANTIC_PARAPHRASE_CUTOFF = 0.38  
-SEMANTIC_TOPIC_CUTOFF = 0.50
+# --- THRESHOLDS (Your Tuned Settings) ---
+SEMANTIC_PARAPHRASE_CUTOFF = 0.25   # Strict Paraphrase Detection
+SEMANTIC_TOPIC_CUTOFF = 0.40        # Topic/Concept Detection
+SEQUENCE_THRESHOLD = 0.70           # Exact Word Matching
 
-# 2. Word Match Threshold:
-SEQUENCE_THRESHOLD = 0.70 
+# --- AI DETECTION SETUP ---
+try:
+    print("Loading AI Detector (may take a moment for first download)...")
+    device = 0 if torch.cuda.is_available() else -1 
+    AI_CLASSIFIER = pipeline(
+        "text-classification", 
+        model="roberta-base-openai-detector", 
+        device=device
+    )
+    print("AI Detector loaded successfully.")
+except Exception as e:
+    print(f"Warning: Could not load AI Detector. Skipping AI check. Error: {e}")
+    AI_CLASSIFIER = None
 
 def clean_for_matching(text):
-    """
-    Removes non-alphanumeric characters (like * or -) and lowercases.
-    This fixes the issue where adding a '**Title**' broke the match.
-    """
     if not text: return ""
     return re.sub(r'[^a-zA-Z0-9]', '', text).lower()
 
 def calculate_structural_score(text1, text2):
-    # Compare "cleaned" versions to ignore headers/formatting
     clean1 = clean_for_matching(text1)
     clean2 = clean_for_matching(text2)
     return SequenceMatcher(None, clean1, clean2).ratio()
+
+def check_ai_probability(text):
+    if AI_CLASSIFIER is None: return 0.0, "Skipped"
+    if len(text.split()) < 30: return 0.0, "Too Short"
+    try:
+        result = AI_CLASSIFIER(text[:512], truncation=True)[0]
+        if result['label'] == 'Fake':
+            return result['score'], "🤖 AI LIKELY"
+        else:
+            return (1 - result['score']), "👤 HUMAN"
+    except:
+        return 0.0, "Error"
 
 def check_paper(paper_path):
     client = chromadb.PersistentClient(path=DB_PATH)
@@ -39,24 +57,29 @@ def check_paper(paper_path):
     model = SentenceTransformer('all-MiniLM-L6-v2')
 
     print(f"Scanning: {paper_path}...")
-    
-    # Use your existing utils (They are perfect)
     pages_data = extract_text_with_metadata(paper_path)
     input_chunks = chunk_text_with_page_mapping(pages_data)
     
     total_chunks = len(input_chunks)
-    plagiarism_score = 0.0
     
+    # --- SCORING VARIABLES ---
+    total_plagiarism_risk = 0.0
+    total_ai_risk = 0.0
+    topic_match_count = 0 
+    
+    # NEW: Dictionary to track risk per file
+    # Format: { "book_name.pdf": 3.4, "other_book.pdf": 1.0 }
+    source_contributions = {} 
+
     print(f"\nAnalyzing {total_chunks} segments against database...")
 
-    # --- OUTER LOOP ---
     for i, item in enumerate(input_chunks):
         chunk_text = item['text']
         student_page = item['page']
         
+        # --- 1. PLAGIARISM CHECK ---
         embedding = model.encode([chunk_text]).tolist()
         
-        # Query DB (Fetch top 5 candidates)
         results = collection.query(
             query_embeddings=embedding,
             n_results=5,
@@ -65,68 +88,115 @@ def check_paper(paper_path):
         
         if not results['documents'][0]: continue
 
-        # Reset "Best Match" variables for THIS chunk
         best_match_status = None
-        highest_risk_score = 0.0
+        highest_plagiarism_risk = 0.0 
         best_metadata = None
-        best_scores = (0, 0) # (semantic, structural)
+        best_scores = (0, 0)
+        is_topic_match = False
 
-        # --- INNER LOOP: CHECK TOP 5 CANDIDATES ---
         for j in range(len(results['documents'][0])):
             db_text = results['documents'][0][j]
             distance = results['distances'][0][j]
             metadata = results['metadatas'][0][j]
             
-            # 1. Calculate Scores
             semantic_percent = 1 - distance 
             structural_percent = calculate_structural_score(chunk_text, db_text)
 
             current_status = None
             current_risk = 0.0
             
-            # 2. Determine Category
-            
-            # CASE A: High Word Overlap (Copy Paste)
-            # The clean_for_matching function ensures we catch this even with Headers/Titles
+            # --- CATEGORY LOGIC ---
             if structural_percent > SEQUENCE_THRESHOLD:
                 current_status = "🔴 EXACT COPY"
                 current_risk = 1.0 
+                is_topic_match = False
 
-            # CASE B: High Semantic Match (Paraphrased / AI)
-            # Relaxed threshold (0.38) catches your LSM Theorem example
             elif distance < SEMANTIC_PARAPHRASE_CUTOFF:
-                current_status = "🟡 PARAPHRASED (AI?)"
-                current_risk = 0.75 
+                current_status = "🟡 HEAVY PARAPHRASED" 
+                current_risk = 0.4
+                is_topic_match = False
 
-            # CASE C: Topic Match
             elif distance < SEMANTIC_TOPIC_CUTOFF:
-                 current_status = "🟢 TOPIC MATCH"
-                 current_risk = 0.1
+                current_status = "🟢 TOPIC MATCH"
+                current_risk = 0.0 
+                if highest_plagiarism_risk == 0: 
+                    is_topic_match = True
             
-            # 3. Keep the worst violation found
-            if current_risk > highest_risk_score:
-                highest_risk_score = current_risk
+            if current_risk > highest_plagiarism_risk:
+                highest_plagiarism_risk = current_risk
                 best_match_status = current_status
                 best_metadata = metadata
                 best_scores = (semantic_percent, structural_percent)
-
-        # --- RECORD RESULT ---
-        plagiarism_score += highest_risk_score
+                is_topic_match = False
+            
+            if highest_plagiarism_risk == 0 and is_topic_match and current_risk == 0:
+                best_match_status = "🟢 TOPIC MATCH"
+                best_metadata = metadata
+                best_scores = (semantic_percent, structural_percent)
+        
+        # --- 2. AI AUTHORSHIP CHECK ---
+        ai_score, ai_status = check_ai_probability(chunk_text)
+        total_ai_risk += ai_score
+        
+        # --- REPORTING ---
+        print(f"\n--- Segment {i+1} (Page {student_page}) ---")
         
         if best_match_status:
-            print(f"\n{best_match_status}")
-            print(f"   Student Page: {student_page} | Source: {best_metadata['source']} (Page {best_metadata['page']})")
-            print(f"   Semantic Match: {round(best_scores[0]*100)}% | Word Match: {round(best_scores[1]*100)}%")
-            print(f"   Snippet: '{chunk_text[:80]}...'")
+            print(f"PLAGIARISM: {best_match_status} (Risk: {highest_plagiarism_risk})")
+            if highest_plagiarism_risk > 0.0:
+                 print(f"   Source: {best_metadata['source']} (Page {best_metadata['page']})")
+                 print(f"   Semantic: {round(best_scores[0]*100)}% | Structural: {round(best_scores[1]*100)}%")
+        else:
+            print("PLAGIARISM: ✅ Original")
 
-    # Final Score
+        ai_percentage = round(ai_score * 100)
+        if ai_score > 0.8:
+            print(f"AUTHORSHIP: 🔴 {ai_status} ({ai_percentage}%)")
+        elif ai_score > 0.5:
+             print(f"AUTHORSHIP: 🟡 SUSPICIOUS ({ai_percentage}%)")
+        else:
+             print(f"AUTHORSHIP: 🟢 {ai_status} ({ai_percentage}%)")
+        
+        # --- RECORD SCORES ---
+        total_plagiarism_risk += highest_plagiarism_risk
+        
+        # NEW: Add the specific risk to the specific source file
+        if highest_plagiarism_risk > 0.0:
+            source_name = best_metadata['source']
+            # If bucket doesn't exist, create it. Add risk to bucket.
+            source_contributions[source_name] = source_contributions.get(source_name, 0.0) + highest_plagiarism_risk
+
+        if highest_plagiarism_risk == 0 and best_match_status == "🟢 TOPIC MATCH":
+            topic_match_count += 1
+
+    # --- FINAL CALCULATION ---
     if total_chunks > 0:
-        final_percentage = (plagiarism_score / total_chunks) * 100
+        final_plagiarism_percentage = (total_plagiarism_risk / total_chunks) * 100
+        final_ai_percentage = (total_ai_risk / total_chunks) * 100
+        topic_relevance_percentage = (topic_match_count / total_chunks) * 100
     else:
-        final_percentage = 0.0
+        final_plagiarism_percentage = 0.0
+        final_ai_percentage = 0.0
+        topic_relevance_percentage = 0.0
     
     print("\n========================================")
-    print(f"Final Plagiarism Risk: {round(final_percentage, 2)}%")
+    print(f"REPORT SUMMARY")
+    print(f"----------------------------------------")
+    print(f"🚨 PLAGIARISM RISK:   {round(final_plagiarism_percentage, 2)}%")
+    
+    # NEW: PRINT SOURCE BREAKDOWN
+    if source_contributions:
+        print(f"   --- Sources Breakdown ---")
+        # Sort by highest contribution first
+        sorted_sources = sorted(source_contributions.items(), key=lambda x: x[1], reverse=True)
+        for src, risk_sum in sorted_sources:
+            # Calculate % contribution of this file to the total paper
+            src_percentage = (risk_sum / total_chunks) * 100
+            print(f"   📄 {src}: {round(src_percentage, 2)}%")
+    
+    print(f"----------------------------------------")
+    print(f"🤖 AI GENERATION RISK: {round(final_ai_percentage, 2)}%")
+    print(f"📚 TOPIC RELEVANCE:    {round(topic_relevance_percentage, 2)}%")
     print("========================================")
 
 if __name__ == "__main__":

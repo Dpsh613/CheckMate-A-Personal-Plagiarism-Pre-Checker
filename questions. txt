@@ -5,13 +5,13 @@
 5. important ---% of kis page me kitna % hoga... 
 
 1. pymupdf -
- high performanc epython library used for - 
+ high performance python library used for - 
      PDf manipulation (open,modify,save)
      Data Extraction (text,image,metadata)
      Conversion (pdf to image)
      Analysis (advance layout analysis)
      Splitting (combining pdfs)
-
+chec
 (It is the industry standard for **high-performance** PDF processing today,`import fitz` is what 99% of developers and tutorials still use)
 
 2. re - regular expressions

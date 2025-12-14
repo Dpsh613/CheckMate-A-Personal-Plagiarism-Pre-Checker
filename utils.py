@@ -31,7 +31,7 @@ def clean_and_fix_text(text):
 def extract_text_with_metadata(pdf_path):
     """
     Opens a PDF and extracts text page by page.
-    NEW FEATURE: Ignores the top 5% and bottom 5% of the page 
+    NEW FEATURE: Ignores the top 5% and bottom 8% of the page 
     to remove Headers, Footers, and Page Numbers.
     """
     try:
@@ -84,7 +84,7 @@ def extract_text_with_metadata(pdf_path):
         # Join all blocks on this page into one big string
         full_page_text = ' '.join(page_text_pieces)
         
-        # Only add the page if it actually has text
+        # (7 - 10 words) Only add the page if it actually has text avoiding, image only page - blank page with hidden symbols, just a page with - 'chapter- 4' headings
         if len(full_page_text) > 50: 
             pages_data.append({
                 "page": page_num + 1, 
