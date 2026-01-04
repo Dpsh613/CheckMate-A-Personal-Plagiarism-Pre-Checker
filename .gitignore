@@ -1,0 +1,15 @@
+#python
+__pycache__/
+*.pyc
+.env
+
+# virtual environment
+venv/
+.venv/
+env/
+ENV/
+
+temp_uploads/
+
+.DS_Store
+Thumb.db
