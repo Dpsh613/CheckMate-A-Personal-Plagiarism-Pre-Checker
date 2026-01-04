@@ -1,168 +1,157 @@
-import chromadb
-from sentence_transformers import SentenceTransformer
-from transformers import pipeline 
-import torch
-from utils import extract_text_with_metadata, chunk_text_with_page_mapping, split_into_sentences
-from difflib import SequenceMatcher
-import re
 import os
+import torch
+import chromadb
+from sentence_transformers import SentenceTransformer, util
+from transformers import pipeline
+from difflib import SequenceMatcher
+from utils import extract_text_from_pdf, get_sentences_from_text, normalize_text
+import re
 
-# --- CONFIGURATION & GLOBAL LOAD ---
+# CONFIG
 DB_PATH = "./my_plagiarism_db"
 COLLECTION_NAME = "condensed_matter"
 
-print("⏳ Loading Models in checker.py...")
+print("⏳ Loading Models...")
+client = chromadb.PersistentClient(path=DB_PATH)
+collection = client.get_or_create_collection(name=COLLECTION_NAME)
+model = SentenceTransformer('all-MiniLM-L6-v2')
+
 try:
-    client = chromadb.PersistentClient(path=DB_PATH)
-    collection = client.get_or_create_collection(name=COLLECTION_NAME)
-    model = SentenceTransformer('all-MiniLM-L6-v2')
-    device = 0 if torch.cuda.is_available() else -1 
+    device = 0 if torch.cuda.is_available() else -1
     ai_classifier = pipeline("text-classification", model="roberta-base-openai-detector", device=device)
-    print("✅ All Models Loaded Successfully.")
-except Exception as e:
-    print(f"❌ Error loading models: {e}")
+except:
+    ai_classifier = None
+print("✅ Models Loaded.")
 
-# --- THRESHOLDS ---
-SEMANTIC_PARAPHRASE_CUTOFF = 0.35
-SEMANTIC_TOPIC_CUTOFF = 0.45
-SEQUENCE_THRESHOLD = 0.80
-
-def clean_for_matching(text):
-    if not text: return ""
-    return re.sub(r'[^a-zA-Z0-9]', '', text).lower()
-
-def calculate_structural_score(text1, text2):
-    clean1 = clean_for_matching(text1)
-    clean2 = clean_for_matching(text2)
-    return SequenceMatcher(None, clean1, clean2).ratio()
-
-def check_ai_probability(text):
-    if ai_classifier is None: return 0.0, "Skipped"
-    if len(text.split()) < 30: return 0.0, "Too Short"
-    try:
-        result = ai_classifier(text[:512], truncation=True)[0]
-        label = result['label']
-        score = result['score']
-        if label == 'Fake': return score, "AI LIKELY"
-        else: return (1 - score), "HUMAN"
-    except:
-        return 0.0, "Error"
-
-# --- MAIN CALLABLE FUNCTION ---
-def analyze_document(paper_path):
-    pages_data = extract_text_with_metadata(paper_path)
-    input_segments = split_into_sentences(pages_data) 
+def calculate_patchwriting_score(student_text, db_text):
+    """
+    Returns coverage % and total matching words.
+    """
+    # Tokenize
+    s_words = re.findall(r'\w+', student_text.lower())
+    db_words = re.findall(r'\w+', db_text.lower())
     
-    total_segments = len(input_segments)
-    total_plagiarism_risk = 0.0
-    total_ai_risk = 0.0
-    topic_match_count = 0 
-    source_contributions = {} 
+    if not s_words or not db_words: return 0.0, 0
+    
+    matcher = SequenceMatcher(None, s_words, db_words)
+    total_matching_words = 0
+    
+    # Common Scientific Stopwords (We don't count matches if it's ONLY these)
+    # e.g., "results of the" -> ignored. "results of the lithium" -> counted.
+    stopwords = {'the', 'of', 'and', 'in', 'to', 'a', 'is', 'for', 'with', 'on', 'at', 'by', 'this', 'are', 'it', 'from', 'as', 'be', 'that', 'or', 'an', 'was', 'were'}
+
+    for block in matcher.get_matching_blocks():
+        # Block must be at least 3 words long
+        if block.size >= 3:
+            # Get the actual words in this block
+            matched_phrase = s_words[block.a : block.a + block.size]
+            
+            # CHECK: Does this block contain at least one NON-STOPWORD?
+            # If the block is "and in the", we ignore it.
+            # If the block is "magnetic field applied", we count it.
+            has_content_word = any(w not in stopwords for w in matched_phrase)
+            
+            if has_content_word:
+                total_matching_words += block.size
+
+    coverage = total_matching_words / len(s_words)
+    return coverage, total_matching_words
+
+def analyze_document(paper_path):
+    if not os.path.exists(paper_path): return {"error": "File not found"}
+
+    pages_data = extract_text_from_pdf(paper_path)
+    input_sentences = get_sentences_from_text(pages_data)
+    total_sentences = len(input_sentences)
+    
+    if total_sentences == 0: return {"error": "No text extracted."}
+
+    plagiarized_count = 0
+    ai_risk_total = 0.0
+    source_contributions = {}
     detailed_segments = []
 
-    for i, item in enumerate(input_segments):
-        segment_text = item['text']
-        student_page = item['page']
-        
-        # --- CRITICAL FIX: GET THE FLAG FROM UTILS ---
-        is_eop = item.get('is_end_of_paragraph', False) 
-        # ---------------------------------------------
+    input_texts = [item['text'] for item in input_sentences]
+    input_embeddings = model.encode(input_texts, convert_to_tensor=True)
 
-        embedding = model.encode([segment_text]).tolist()
-        results = collection.query(query_embeddings=embedding, n_results=10)
-        
-        best_match_status = "ORIGINAL"
-        highest_plagiarism_risk = 0.0 
-        best_metadata = {}
-        best_scores = {"semantic": 0.0, "structural": 0.0}
-        match_found = False
+    for i, item in enumerate(input_sentences):
+        sent_text = item['text']
+        sent_embedding = input_embeddings[i]
+        page_num = item['page']
+
+        # Query DB
+        results = collection.query(
+            query_embeddings=sent_embedding.tolist(), 
+            n_results=5,
+            include=["documents", "metadatas"] 
+        )
+
+        best_match_type = "ORIGINAL"
+        best_score = 0.0
+        best_source = None
+        best_match_text = None
 
         if results['documents'] and results['documents'][0]:
-            is_topic_match = False
-            for j in range(len(results['documents'][0])):
-                db_chunk_text = results['documents'][0][j]
-                distance = results['distances'][0][j]
-                metadata = results['metadatas'][0][j]
+            candidates_docs = results['documents'][0]
+            candidates_meta = results['metadatas'][0]
+
+            for idx, db_doc in enumerate(candidates_docs):
+                score, matched_count = calculate_patchwriting_score(sent_text, db_doc)
                 
-                structural_percent = calculate_structural_score(segment_text, db_chunk_text)
-                semantic_percent = 1 - distance 
-
-                current_risk = 0.0
-                current_status = None
-
-                if structural_percent > SEQUENCE_THRESHOLD:
-                    current_status = "🔴 EXACT COPY"
-                    current_risk = 1.0 
-                elif distance < SEMANTIC_PARAPHRASE_CUTOFF:
-                    current_status = "🟡 HEAVY PARAPHRASED" 
-                    current_risk = 0.5 
-                elif distance < SEMANTIC_TOPIC_CUTOFF:
-                    current_status = "🟢 TOPIC MATCH"
-                    current_risk = 0.0 
-                    if highest_plagiarism_risk == 0: is_topic_match = True
+                # --- STRICTER THRESHOLDS ---
+                current_type = "ORIGINAL"
                 
-                if current_risk > highest_plagiarism_risk:
-                    highest_plagiarism_risk = current_risk
-                    best_match_status = current_status
-                    best_metadata = metadata
-                    match_found = True
-                    best_scores = {"semantic": round(semantic_percent*100,1), "structural": round(structural_percent*100,1)}
-                    is_topic_match = False
+                if score > 0.85: 
+                    current_type = "🔴 EXACT MATCH"
+                elif score > 0.40: 
+                    current_type = "🟡 PATCHWORK / PARAPHRASED"
+                elif score > 0.25: # Raised from 0.15 to 0.25 to kill noise
+                    current_type = "🟠 POTENTIAL MATCH"
+                
+                if score > best_score:
+                    best_score = score
+                    best_match_type = current_type
+                    best_source = candidates_meta[idx]['source']
+                    best_match_text = db_doc
 
-        ai_score, ai_status = check_ai_probability(segment_text)
-        total_ai_risk += ai_score
-        total_plagiarism_risk += highest_plagiarism_risk
-        
-        if highest_plagiarism_risk > 0.0:
-            src = best_metadata.get('source', 'Unknown')
-            source_contributions[src] = source_contributions.get(src, 0.0) + highest_plagiarism_risk
+        # Counters
+        if "EXACT" in best_match_type: plagiarized_count += 1
+        elif "PATCHWORK" in best_match_type: plagiarized_count += 1
+        elif "POTENTIAL" in best_match_type: plagiarized_count += 0.3 # Reduced weight
 
-        if highest_plagiarism_risk == 0 and best_match_status == "🟢 TOPIC MATCH":
-            topic_match_count += 1
+        # Only add source if match is significant (> 25%)
+        if best_source and best_score > 0.25:
+            source_contributions[best_source] = source_contributions.get(best_source, 0) + 1
 
-        segment_data = {
-            "id": i,
-            "page": student_page,
-            "text": segment_text,
-            "status": best_match_status,
-            "plagiarism_risk_score": highest_plagiarism_risk,
-            "ai_probability": round(ai_score * 100, 1),
-            "ai_status": ai_status,
-            "match_details": None,
-            # --- CRITICAL FIX: PASS THE FLAG TO JSON ---
-            "is_end_of_paragraph": is_eop 
-            # -------------------------------------------
-        }
+        # AI Check
+        ai_prob = 0
+        if ai_classifier and len(sent_text.split()) > 5:
+            try:
+                res = ai_classifier(sent_text[:512], truncation=True)[0]
+                if res['label'] == 'Fake': ai_prob = res['score']
+            except: pass
+        ai_risk_total += ai_prob
 
-        if match_found and best_match_status != "ORIGINAL":
-            segment_data["match_details"] = {
-                "source_doc": best_metadata.get('source'),
-                "source_page": best_metadata.get('page'),
-                "semantic_score": best_scores['semantic'],
-                "structural_score": best_scores['structural']
-            }
-        
-        detailed_segments.append(segment_data)
+        detailed_segments.append({
+            "text": sent_text,
+            "page": page_num,
+            "status": best_match_type,
+            "score": round(best_score * 100, 1),
+            "source": best_source if best_score > 0.25 else None,
+            "matched_db_text": best_match_text if best_score > 0.25 else None
+        })
 
-    if total_segments > 0:
-        final_plagiarism_pct = (total_plagiarism_risk / total_segments) * 100
-        final_ai_pct = (total_ai_risk / total_segments) * 100
-        topic_relevance_pct = (topic_match_count / total_segments) * 100
-    else:
-        final_plagiarism_pct = 0.0; final_ai_pct = 0.0; topic_relevance_pct = 0.0
+    final_plag_percent = min((plagiarized_count / total_sentences) * 100, 100)
+    final_ai_percent = (ai_risk_total / total_sentences) * 100
 
-    sources_list = []
-    sorted_sources = sorted(source_contributions.items(), key=lambda x: x[1], reverse=True)
-    for src, risk_sum in sorted_sources:
-        src_pct = (risk_sum / total_segments) * 100
-        sources_list.append({"filename": src, "contribution_percent": round(src_pct, 2)})
+    sources_list = [{"filename": k, "count": v} for k, v in sorted(source_contributions.items(), key=lambda x: x[1], reverse=True)]
 
     return {
         "summary": {
-            "plagiarism_percent": round(final_plagiarism_pct, 2),
-            "ai_percent": round(final_ai_pct, 2),
-            "topic_relevance_percent": round(topic_relevance_pct, 2),
-            "total_segments": total_segments
+            "plagiarism_percent": round(final_plag_percent, 2),
+            "ai_percent": round(final_ai_percent, 2),
+            "total_sentences": total_sentences,
+            "matched_sentences": round(plagiarized_count, 1)
         },
         "sources": sources_list,
         "segments": detailed_segments
