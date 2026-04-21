@@ -1,3 +1,0 @@
-ERROR: Invalid requirement: '(venv)': Expected package name at the start of dependency specifier
-    (venv)
-    ^
