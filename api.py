@@ -29,10 +29,12 @@ app = FastAPI()
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+FRONTEND_URLS = os.getenv("FRONTEND_URLS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
+
 # CORS Lockdown
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=[url.strip() for url in FRONTEND_URLS],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
