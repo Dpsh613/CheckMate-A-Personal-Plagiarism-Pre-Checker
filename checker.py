@@ -3,11 +3,8 @@ from sentence_transformers import SentenceTransformer
 from utils import extract_text_from_pdf, get_sliding_windows
 import re
 
-DB_PATH = "./my_plagiarism_db"
-COLLECTION_NAME = "condensed_matter"
+from db_manager import get_user_collection
 
-client = chromadb.PersistentClient(path=DB_PATH)
-collection = client.get_or_create_collection(name=COLLECTION_NAME)
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
 def extract_trigrams(words):
@@ -37,7 +34,8 @@ def calculate_ngram_overlap(student_text, db_text):
     coverage = len(matched_words) / len(s_words)
     return coverage, matched_words
 
-def analyze_document(paper_path):
+def analyze_document(user_id, paper_path):
+    collection = get_user_collection(user_id)
     pages_data = extract_text_from_pdf(paper_path)
     input_chunks = get_sliding_windows(pages_data)
     

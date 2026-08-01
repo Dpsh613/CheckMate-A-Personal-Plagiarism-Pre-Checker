@@ -27,6 +27,9 @@ def search_arxiv_metadata(topic: str, max_results: int = 10):
 
 def download_specific_arxiv_paper(pdf_url: str, title: str, db_manager_add_func):
     """Step 2: Download, Index, and DELETE the PDF to save space."""
+    if not pdf_url.startswith(("http://arxiv.org/", "https://arxiv.org/")):
+        return False, "Invalid URL. Only arxiv.org URLs are allowed."
+        
     safe_title = "".join([c for c in title if c.isalpha() or c.isdigit() or c==' ']).rstrip()
     filename = f"arxiv_{safe_title.replace(' ', '_')}.pdf"
     file_path = os.path.join(DATASET_FOLDER, filename)

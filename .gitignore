@@ -11,5 +11,9 @@ ENV/
 
 temp_uploads/
 
+# databases
+my_plagiarism_db/
+*.sqlite
+
 .DS_Store
 Thumb.db
