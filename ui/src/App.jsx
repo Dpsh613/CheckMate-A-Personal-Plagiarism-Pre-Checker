@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import axios from "axios";
+axios.defaults.withCredentials = true;
+import LightRays from "./LightRays";
 import {
   UploadCloud,
   FileText,
@@ -12,56 +14,294 @@ import {
   BookOpen,
   File,
   Info,
+  Moon,
+  Sun,
+  LogOut,
+  User,
+  Mail,
+  Eye,
+  EyeOff
 } from "lucide-react";
 
 const API_BASE = "http://localhost:8000";
 
-// Refined, softer color palette for easier reading
+// Minimalist Semantic Colors for plagiarism matches
 const SOURCE_COLORS = [
   {
-    text: "text-rose-600",
-    bg: "bg-rose-50",
-    highlight:
-      "bg-rose-100 text-rose-900 border-b-2 border-rose-300 rounded-sm",
-    dot: "bg-rose-500",
+    text: "text-zinc-900 dark:text-zinc-100",
+    bg: "bg-zinc-100 dark:bg-zinc-800",
+    highlight: "bg-zinc-200 dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 rounded-sm px-0.5",
+    dot: "bg-zinc-900 dark:bg-zinc-100 text-white dark:text-black",
   },
   {
-    text: "text-blue-600",
-    bg: "bg-blue-50",
-    highlight:
-      "bg-blue-100 text-blue-900 border-b-2 border-blue-300 rounded-sm",
-    dot: "bg-blue-500",
+    text: "text-neutral-700 dark:text-neutral-300",
+    bg: "bg-neutral-100 dark:bg-neutral-800",
+    highlight: "bg-neutral-200 dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100 rounded-sm px-0.5",
+    dot: "bg-neutral-700 dark:bg-neutral-300 text-white dark:text-black",
   },
   {
-    text: "text-emerald-600",
-    bg: "bg-emerald-50",
-    highlight:
-      "bg-emerald-100 text-emerald-900 border-b-2 border-emerald-300 rounded-sm",
-    dot: "bg-emerald-500",
-  },
-  {
-    text: "text-purple-600",
-    bg: "bg-purple-50",
-    highlight:
-      "bg-purple-100 text-purple-900 border-b-2 border-purple-300 rounded-sm",
-    dot: "bg-purple-500",
-  },
-  {
-    text: "text-amber-600",
-    bg: "bg-amber-50",
-    highlight:
-      "bg-amber-100 text-amber-900 border-b-2 border-amber-300 rounded-sm",
-    dot: "bg-amber-500",
-  },
+    text: "text-stone-700 dark:text-stone-300",
+    bg: "bg-stone-100 dark:bg-stone-800",
+    highlight: "bg-stone-200 dark:bg-stone-700 text-stone-900 dark:text-stone-100 rounded-sm px-0.5",
+    dot: "bg-stone-700 dark:bg-stone-300 text-white dark:text-black",
+  }
 ];
 
-export default function PlagiarismDashboard() {
+export default function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(localStorage.getItem("isAuthenticated") === "true");
+  const [email, setEmail] = useState(localStorage.getItem("email"));
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const saved = localStorage.getItem("isDarkMode");
+    if (saved !== null) return saved === "true";
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  });
+
+  useEffect(() => {
+    localStorage.setItem("isDarkMode", isDarkMode);
+  }, [isDarkMode]);
+
+  const handleLogin = (newEmail) => {
+    localStorage.setItem("isAuthenticated", "true");
+    localStorage.setItem("email", newEmail);
+    setIsAuthenticated(true);
+    setEmail(newEmail);
+  };
+
+  const handleLogout = async () => {
+    try {
+      await axios.post(`${API_BASE}/logout`);
+    } catch (e) {
+      console.error("Logout failed", e);
+    }
+    localStorage.removeItem("isAuthenticated");
+    localStorage.removeItem("email");
+    setIsAuthenticated(false);
+    setEmail(null);
+  };
+
+  return (
+    <div className={isDarkMode ? "dark" : ""}>
+      <div className="h-screen flex flex-col font-sans bg-white dark:bg-[#0a0a0a] text-zinc-900 dark:text-zinc-100 transition-colors duration-500 relative">
+        {!isAuthenticated ? (
+          <AuthScreen onLogin={handleLogin} isDarkMode={isDarkMode} setIsDarkMode={setIsDarkMode} />
+        ) : (
+          <PlagiarismDashboard 
+            email={email} 
+            onLogout={handleLogout} 
+            isDarkMode={isDarkMode} 
+            setIsDarkMode={setIsDarkMode} 
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AuthScreen({ onLogin, isDarkMode, setIsDarkMode }) {
+  const [authMode, setAuthMode] = useState("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState("");
+  const [successMsg, setSuccessMsg] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('reset_token');
+    if (token) {
+      setAuthMode('reset');
+    }
+  }, []);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    setSuccessMsg("");
+    setLoading(true);
+
+    try {
+      if (authMode === "register") {
+        const res = await axios.post(`${API_BASE}/register`, { email, password });
+        setSuccessMsg(res.data.message);
+        setAuthMode("login");
+        setPassword("");
+      } else if (authMode === "login") {
+        const res = await axios.post(`${API_BASE}/login`, { email, password });
+        onLogin(res.data.email);
+      } else if (authMode === "forgot") {
+        const res = await axios.post(`${API_BASE}/forgot-password`, { email });
+        setSuccessMsg(res.data.message);
+        setEmail("");
+      } else if (authMode === "reset") {
+        const urlParams = new URLSearchParams(window.location.search);
+        const token = urlParams.get('reset_token');
+        const res = await axios.post(`${API_BASE}/reset-password`, { token, new_password: password });
+        setSuccessMsg(res.data.message);
+        setAuthMode("login");
+        setPassword("");
+        window.history.replaceState({}, document.title, "/");
+      }
+    } catch (err) {
+      if (err.response?.status === 429) {
+        setError("Too many requests. Please wait a minute and try again.");
+      } else {
+        setError(err.response?.data?.detail || "Authentication failed");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex-1 flex items-center justify-center p-4 animate-fade-in relative overflow-hidden">
+      <div className="absolute inset-0 z-0">
+        <LightRays
+          raysOrigin="top-center"
+          raysColor={isDarkMode ? "#ffffff" : "#27272a"}
+          raysSpeed={1.5}
+          lightSpread={0.8}
+          rayLength={1.2}
+          followMouse={true}
+          mouseInfluence={0.1}
+          noiseAmount={0.1}
+          distortion={0.05}
+          className="custom-rays opacity-50 dark:opacity-70"
+        />
+      </div>
+
+      <button 
+        onClick={() => setIsDarkMode(!isDarkMode)}
+        className="absolute top-6 right-6 p-2 rounded-full bg-white/50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors z-20 backdrop-blur-sm"
+      >
+        {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+      </button>
+
+      <div className="w-full max-w-[400px] animate-slide-up relative z-10">
+        <div className="flex items-center justify-center gap-2 mb-10 text-zinc-900 dark:text-zinc-100">
+          <BookOpen className="w-8 h-8" />
+          <h1 className="font-bold text-3xl tracking-tighter">CheckMate</h1>
+        </div>
+        
+        <div className="bg-white/80 dark:bg-[#0a0a0a]/80 backdrop-blur-xl p-10 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-2xl shadow-zinc-200/50 dark:shadow-none transition-colors">
+          <h2 className="text-center font-medium text-lg mb-8 tracking-tight text-zinc-600 dark:text-zinc-400">
+            {authMode === "register" ? "Create an account" : 
+             authMode === "forgot" ? "Reset your password" : 
+             authMode === "reset" ? "Create new password" : "Log in to your account"}
+          </h2>
+          
+          {error && (
+            <div className="bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm mb-6 flex items-center gap-2 border border-red-100 dark:border-red-900/50 animate-fade-in">
+              <AlertCircle className="w-4 h-4 shrink-0" /> {error}
+            </div>
+          )}
+
+          {successMsg && (
+            <div className="bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 p-3 rounded-lg text-sm mb-6 flex items-center gap-2 border border-emerald-100 dark:border-emerald-900/50 animate-fade-in">
+              <CheckCircle className="w-4 h-4 shrink-0" /> {successMsg}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {authMode !== "reset" && (
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-2">Email address</label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                  <input 
+                    type="email" 
+                    required
+                    className="w-full border border-zinc-200 dark:border-zinc-800 bg-transparent rounded-lg pl-10 pr-3 py-2.5 text-sm focus:ring-1 focus:ring-zinc-900 dark:focus:ring-zinc-100 focus:border-zinc-900 dark:focus:border-zinc-100 outline-none transition-all placeholder:text-zinc-400"
+                    placeholder="name@example.com"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
+            {authMode !== "forgot" && (
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-2">
+                  {authMode === "reset" ? "New Password" : "Password"}
+                </label>
+                <div className="relative">
+                  <input 
+                    type={showPassword ? "text" : "password"}
+                    required
+                    minLength={6}
+                    className="w-full border border-zinc-200 dark:border-zinc-800 bg-transparent rounded-lg pl-3 pr-10 py-2.5 text-sm focus:ring-1 focus:ring-zinc-900 dark:focus:ring-zinc-100 focus:border-zinc-900 dark:focus:border-zinc-100 outline-none transition-all"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+            )}
+            
+            <button 
+              type="submit" 
+              disabled={loading}
+              className="w-full bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-white text-white dark:text-zinc-900 py-2.5 rounded-lg text-sm font-medium transition-all active:scale-[0.98] flex justify-center items-center gap-2 disabled:opacity-70 disabled:active:scale-100 mt-2"
+            >
+              {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+              {authMode === "register" ? "Create Account" : 
+               authMode === "forgot" ? "Send Link" : 
+               authMode === "reset" ? "Update Password" : "Log In"}
+            </button>
+          </form>
+
+          {authMode === "login" && (
+            <div className="mt-6 text-center">
+              <button 
+                type="button"
+                onClick={() => {
+                  setAuthMode("forgot");
+                  setError("");
+                  setSuccessMsg("");
+                }}
+                className="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors"
+              >
+                Forgot your password?
+              </button>
+            </div>
+          )}
+
+          {authMode !== "reset" && (
+            <div className="mt-8 pt-6 border-t border-zinc-100 dark:border-zinc-800 text-center text-xs text-zinc-500">
+              {authMode === "register" ? "Already have an account?" : 
+               authMode === "forgot" ? "Remember your password?" : "Don't have an account?"}
+              <button 
+                type="button"
+                onClick={() => {
+                  setAuthMode(authMode === "register" ? "login" : authMode === "forgot" ? "login" : "register");
+                  setError("");
+                  setSuccessMsg("");
+                }}
+                className="ml-2 font-medium text-zinc-900 dark:text-zinc-100 hover:underline"
+              >
+                {authMode === "register" ? "Log in" : 
+                 authMode === "forgot" ? "Log in" : "Sign up"}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PlagiarismDashboard({ email, onLogout, isDarkMode, setIsDarkMode }) {
   const [viewMode, setViewMode] = useState("analyzer");
   const [file, setFile] = useState(null);
   const [analysis, setAnalysis] = useState(null);
   const [loading, setLoading] = useState(false);
   const [selectedSegment, setSelectedSegment] = useState(null);
-  const fileInputRef = useRef(null);
 
   const [dbFiles, setDbFiles] = useState([]);
   const [arxivTopic, setArxivTopic] = useState("");
@@ -73,6 +313,7 @@ export default function PlagiarismDashboard() {
       const res = await axios.get(`${API_BASE}/database/files`);
       setDbFiles(res.data.files);
     } catch (err) {
+      if (err.response?.status === 401) onLogout();
       console.error(err);
     }
   };
@@ -89,6 +330,8 @@ export default function PlagiarismDashboard() {
     try {
       const response = await axios.post(`${API_BASE}/analyze`, formData);
       setAnalysis(response.data);
+    } catch (err) {
+      if (err.response?.status === 401) onLogout();
     } finally {
       setLoading(false);
     }
@@ -99,9 +342,11 @@ export default function PlagiarismDashboard() {
     setArxivLoading(true);
     try {
       const res = await axios.get(
-        `${API_BASE}/arxiv/search?topic=${encodeURIComponent(arxivTopic)}`,
+        `${API_BASE}/arxiv/search?topic=${encodeURIComponent(arxivTopic)}`
       );
       setArxivResults(res.data.results);
+    } catch(err) {
+      if (err.response?.status === 401) onLogout();
     } finally {
       setArxivLoading(false);
     }
@@ -113,16 +358,19 @@ export default function PlagiarismDashboard() {
         pdf_url: paper.pdf_url,
         title: paper.title,
       });
-      alert("Paper Indexed & Deleted from Disk!");
       fetchDbFiles();
     } catch (err) {
-      alert("Failed to index paper.");
+      if (err.response?.status === 401) onLogout();
     }
   };
 
   const deleteDbFile = async (filename) => {
-    await axios.delete(`${API_BASE}/database/files/${filename}`);
-    fetchDbFiles();
+    try {
+      await axios.delete(`${API_BASE}/database/files/${filename}`);
+      fetchDbFiles();
+    } catch(err) {
+      if (err.response?.status === 401) onLogout();
+    }
   };
 
   const getSourceColor = (sourceName) => {
@@ -131,15 +379,9 @@ export default function PlagiarismDashboard() {
     return SOURCE_COLORS[index % SOURCE_COLORS.length];
   };
 
-  const getScoreColor = (score) => {
-    if (score < 15) return "text-emerald-500 border-emerald-500 bg-emerald-50";
-    if (score < 40) return "text-amber-500 border-amber-500 bg-amber-50";
-    return "text-rose-500 border-rose-500 bg-rose-50";
-  };
-
   const renderHighlightedText = (segment) => {
     if (segment.status === "ORIGINAL" || !segment.matched_words) {
-      return <span>{segment.text} </span>;
+      return <span className="text-zinc-600 dark:text-zinc-400">{segment.text} </span>;
     }
 
     const color = getSourceColor(segment.source);
@@ -147,10 +389,10 @@ export default function PlagiarismDashboard() {
 
     return (
       <span
-        className={`cursor-pointer transition-colors duration-200 ${
+        className={`cursor-pointer transition-all duration-300 ease-out ${
           selectedSegment === segment
-            ? "bg-gray-100 ring-2 ring-gray-200 rounded"
-            : ""
+            ? "ring-2 ring-zinc-300 dark:ring-zinc-600 bg-zinc-50 dark:bg-zinc-800/50 rounded"
+            : "hover:bg-zinc-50 dark:hover:bg-zinc-900/50"
         }`}
         onClick={() => setSelectedSegment(segment)}
       >
@@ -161,95 +403,100 @@ export default function PlagiarismDashboard() {
             return (
               <mark
                 key={i}
-                className={`px-[1px] mx-[1px] bg-transparent ${color.highlight}`}
+                className={`bg-transparent transition-colors ${color.highlight}`}
               >
                 {w}
               </mark>
             );
           }
-          return <span key={i}> {w} </span>;
+          return <span key={i} className="text-zinc-900 dark:text-zinc-100"> {w} </span>;
         })}
       </span>
     );
   };
 
   return (
-    <div className="h-screen flex flex-col font-sans bg-gray-50 text-gray-800">
-      {/* Navbar */}
-      <header className="bg-white border-b border-gray-200 h-16 flex items-center px-8 gap-8 shrink-0">
-        <div className="flex items-center gap-2 text-indigo-600">
-          <BookOpen className="w-6 h-6" />
-          <h1 className="font-bold text-xl tracking-tight text-gray-900">
-            CheckMate
-          </h1>
+    <>
+      <header className="bg-white/80 dark:bg-[#0a0a0a]/80 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-900 h-16 flex items-center px-8 gap-8 shrink-0 z-20 shadow-sm">
+        <div className="flex items-center gap-2 text-zinc-900 dark:text-zinc-100">
+          <BookOpen className="w-5 h-5" />
+          <h1 className="font-bold text-lg tracking-tight">CheckMate</h1>
         </div>
 
-        <nav className="flex gap-1 ml-4">
+        <nav className="flex gap-2 ml-8 flex-1">
           <button
             onClick={() => setViewMode("analyzer")}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+            className={`px-3 py-1.5 rounded-md text-sm transition-all duration-300 ${
               viewMode === "analyzer"
-                ? "bg-indigo-50 text-indigo-600"
-                : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
+                ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-medium"
+                : "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300"
             }`}
           >
-            <div className="flex items-center gap-2">
-              <FileText className="w-4 h-4" /> Analyzer
-            </div>
+            Analyzer
           </button>
           <button
             onClick={() => setViewMode("database")}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+            className={`px-3 py-1.5 rounded-md text-sm transition-all duration-300 ${
               viewMode === "database"
-                ? "bg-indigo-50 text-indigo-600"
-                : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
+                ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-medium"
+                : "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300"
             }`}
           >
-            <div className="flex items-center gap-2">
-              <Database className="w-4 h-4" /> Database
-            </div>
+            Database
           </button>
         </nav>
+        
+        <div className="flex items-center gap-6">
+          <button
+            onClick={() => setIsDarkMode(!isDarkMode)}
+            className="text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+          >
+            {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </button>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-zinc-500">{email}</span>
+            <button
+              onClick={onLogout}
+              className="text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
       </header>
 
-      {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden relative">
         {viewMode === "database" ? (
-          <div className="flex-1 p-8 overflow-y-auto">
-            <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8">
-              {/* Database Panel */}
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col h-[80vh]">
-                <div className="mb-6">
-                  <h2 className="font-semibold text-lg text-gray-900 flex items-center gap-2">
-                    <Database className="w-5 h-5 text-indigo-500" /> Indexed
-                    Sources
+          <div className="flex-1 p-8 lg:p-12 overflow-y-auto bg-zinc-50 dark:bg-[#0a0a0a] animate-fade-in">
+            <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
+              <div className="animate-slide-up bg-white dark:bg-zinc-900/40 p-8 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xl shadow-zinc-200/40 dark:shadow-none" style={{animationDelay: "0.1s"}}>
+                <div className="mb-8">
+                  <h2 className="font-semibold text-xl flex items-center gap-2">
+                    Indexed Sources
                   </h2>
-                  <p className="text-sm text-gray-500 mt-1">
-                    Files stored securely as vectors for similarity matching.
+                  <p className="text-sm text-zinc-500 mt-1">
+                    Your private vector database.
                   </p>
                 </div>
-
-                <div className="flex-1 overflow-y-auto space-y-2 pr-2">
+                <div className="space-y-3">
                   {dbFiles.length === 0 ? (
-                    <div className="text-center py-12 text-gray-400">
-                      <File className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                      <p>No sources indexed yet.</p>
+                    <div className="text-center py-12 text-zinc-400 border border-dashed border-zinc-300 dark:border-zinc-700 rounded-2xl bg-zinc-50/50 dark:bg-zinc-900/50">
+                      <File className="w-8 h-8 mx-auto mb-3 opacity-50" />
+                      <p className="text-sm">No sources yet.</p>
                     </div>
                   ) : (
                     dbFiles.map((f, i) => (
                       <div
                         key={i}
-                        className="flex justify-between items-center p-3 rounded-lg border border-gray-100 hover:border-gray-200 hover:shadow-sm transition-all group bg-gray-50/50"
+                        className="flex justify-between items-center p-4 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-[#111] hover:border-zinc-300 dark:hover:border-zinc-700 transition-all group"
                       >
                         <div className="flex items-center gap-3 overflow-hidden">
-                          <FileText className="w-4 h-4 text-gray-400 shrink-0" />
-                          <span className="text-sm font-medium text-gray-700 truncate">
-                            {f}
-                          </span>
+                          <FileText className="w-4 h-4 text-zinc-400 shrink-0" />
+                          <span className="text-sm font-medium truncate">{f}</span>
                         </div>
                         <button
                           onClick={() => deleteDbFile(f)}
-                          className="opacity-0 group-hover:opacity-100 p-2 hover:bg-rose-100 rounded-md transition-all text-rose-500"
+                          className="opacity-0 group-hover:opacity-100 p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-all text-zinc-500 hover:text-red-500"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -259,56 +506,45 @@ export default function PlagiarismDashboard() {
                 </div>
               </div>
 
-              {/* Arxiv Panel */}
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col h-[80vh]">
-                <div className="mb-6">
-                  <h2 className="font-semibold text-lg text-gray-900 flex items-center gap-2">
-                    <Search className="w-5 h-5 text-indigo-500" /> Import from
-                    ArXiv
+              <div className="animate-slide-up bg-white dark:bg-zinc-900/40 p-8 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xl shadow-zinc-200/40 dark:shadow-none flex flex-col" style={{animationDelay: "0.2s"}}>
+                <div className="mb-8">
+                  <h2 className="font-semibold text-xl flex items-center gap-2">
+                    Import from ArXiv
                   </h2>
-                  <p className="text-sm text-gray-500 mt-1">
-                    Search and index academic papers directly.
+                  <p className="text-sm text-zinc-500 mt-1">
+                    Index academic papers directly.
                   </p>
                 </div>
-
-                <div className="flex gap-2 mb-6">
+                <div className="flex gap-3 mb-8">
                   <div className="relative flex-1">
-                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
                     <input
-                      className="w-full border border-gray-300 py-2 pl-9 pr-4 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-                      placeholder="Enter a research topic..."
+                      className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 py-2.5 pl-9 pr-4 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-100 transition-all"
+                      placeholder="Search research topics..."
                       value={arxivTopic}
                       onChange={(e) => setArxivTopic(e.target.value)}
-                      onKeyDown={(e) =>
-                        e.key === "Enter" && handleArxivSearch()
-                      }
+                      onKeyDown={(e) => e.key === "Enter" && handleArxivSearch()}
                     />
                   </div>
                   <button
                     onClick={handleArxivSearch}
                     disabled={arxivLoading}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-70"
+                    className="bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 px-6 rounded-xl text-sm font-medium transition-all active:scale-[0.98] disabled:opacity-50 shadow-md"
                   >
-                    {arxivLoading ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      "Search"
-                    )}
+                    {arxivLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Search"}
                   </button>
                 </div>
-
-                <div className="flex-1 overflow-y-auto space-y-3 pr-2">
+                <div className="space-y-4">
                   {arxivResults.map((res, i) => (
                     <div
                       key={i}
-                      className="border border-gray-200 p-4 rounded-lg hover:border-indigo-300 hover:shadow-sm transition-all bg-white"
+                      className="p-5 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-[#111] hover:border-zinc-300 dark:hover:border-zinc-700 transition-all"
                     >
-                      <h3 className="text-sm font-semibold text-gray-800 line-clamp-2 leading-snug">
-                        {res.title}
-                      </h3>
+                      <h3 className="text-sm font-semibold mb-2 leading-snug">{res.title}</h3>
+                      <p className="text-xs text-zinc-500 line-clamp-2 mb-4">{res.summary}</p>
                       <button
                         onClick={() => indexArxivPaper(res)}
-                        className="mt-3 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-1.5 rounded-md transition-colors flex items-center gap-1.5"
+                        className="text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors flex items-center gap-1.5"
                       >
                         <UploadCloud className="w-3.5 h-3.5" /> Index Paper
                       </button>
@@ -320,22 +556,17 @@ export default function PlagiarismDashboard() {
           </div>
         ) : (
           <>
-            {/* Analyzer Left - Document Viewer */}
-            <div className="flex-1 overflow-y-auto bg-gray-100/50 flex flex-col items-center p-8 relative">
+            <div className="flex-1 overflow-y-auto bg-zinc-50 dark:bg-[#0a0a0a] flex flex-col items-center p-8 lg:p-12 transition-colors relative">
               {!analysis ? (
-                <div className="m-auto w-full max-w-md">
-                  <div className="bg-white p-10 rounded-2xl shadow-sm border border-gray-200 text-center">
-                    <div className="w-16 h-16 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-6">
-                      <UploadCloud className="w-8 h-8 text-indigo-500" />
+                <div className="m-auto w-full max-w-md animate-slide-up">
+                  <div className="bg-white dark:bg-zinc-900/40 p-12 rounded-[2rem] border border-zinc-200 dark:border-zinc-800 shadow-2xl shadow-zinc-200/50 dark:shadow-none text-center">
+                    <div className="w-16 h-16 border border-zinc-200 dark:border-zinc-800 rounded-2xl flex items-center justify-center mx-auto mb-6 bg-zinc-50 dark:bg-zinc-800 shadow-sm">
+                      <UploadCloud className="w-6 h-6 text-zinc-600 dark:text-zinc-300" />
                     </div>
-                    <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                      Upload Document
-                    </h3>
-                    <p className="text-gray-500 text-sm mb-8">
-                      Select a text or PDF file to scan for similarity against
-                      your indexed database.
+                    <h3 className="text-2xl font-bold mb-3 tracking-tight">Upload Document</h3>
+                    <p className="text-zinc-500 text-sm mb-10 leading-relaxed px-4">
+                      Select a text or PDF file to scan for similarity against your personal vector database.
                     </p>
-
                     <input
                       type="file"
                       id="file-upload"
@@ -344,104 +575,73 @@ export default function PlagiarismDashboard() {
                     />
                     <label
                       htmlFor="file-upload"
-                      className="cursor-pointer flex flex-col items-center justify-center w-full border-2 border-dashed border-gray-300 rounded-lg p-6 hover:bg-gray-50 hover:border-indigo-400 transition-all mb-4"
+                      className="cursor-pointer flex flex-col items-center justify-center w-full border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-2xl p-10 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 hover:border-zinc-400 dark:hover:border-zinc-500 transition-all mb-6 group"
                     >
-                      <span className="text-sm font-medium text-gray-600">
-                        {file ? file.name : "Click to browse files"}
+                      <span className="text-sm font-semibold text-zinc-600 dark:text-zinc-400 group-hover:text-zinc-900 dark:group-hover:text-zinc-200 transition-colors">
+                        {file ? file.name : "Browse files"}
                       </span>
                     </label>
-
                     <button
                       onClick={handleAnalyze}
                       disabled={!file || loading}
-                      className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-lg font-medium transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="w-full bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 py-3.5 rounded-xl text-sm font-semibold transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-zinc-900/20 dark:shadow-none"
                     >
-                      {loading ? (
-                        <>
-                          <Loader2 className="w-5 h-5 animate-spin" />{" "}
-                          Scanning...
-                        </>
-                      ) : (
-                        "Scan Document"
-                      )}
+                      {loading ? <><Loader2 className="w-5 h-5 animate-spin" /> Scanning...</> : "Scan Document"}
                     </button>
                   </div>
                 </div>
               ) : (
-                <div className="bg-white shadow-md ring-1 ring-gray-200 w-full max-w-4xl p-12 lg:p-20 font-serif leading-loose text-lg text-gray-800 text-justify rounded-sm min-h-full">
+                <div className="bg-white dark:bg-[#111] border border-zinc-100 dark:border-zinc-900 w-full max-w-3xl p-10 lg:p-16 font-serif leading-loose text-lg text-justify rounded-2xl min-h-full animate-fade-in shadow-sm">
                   {analysis.segments.map((seg, i) => (
-                    <React.Fragment key={i}>
-                      {renderHighlightedText(seg)}
-                    </React.Fragment>
+                    <React.Fragment key={i}>{renderHighlightedText(seg)}</React.Fragment>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* Analyzer Right - Results Sidebar */}
             {analysis && (
-              <div className="w-[380px] bg-white border-l border-gray-200 shadow-xl flex flex-col shrink-0 z-10">
-                {/* Score Header */}
-                <div className="p-8 border-b border-gray-100 flex flex-col items-center justify-center">
-                  <div
-                    className={`w-32 h-32 rounded-full border-8 flex flex-col items-center justify-center ${getScoreColor(analysis.summary.plagiarism_percent)} shadow-inner`}
-                  >
-                    <span className="text-4xl font-black tracking-tighter">
+              <div className="w-[360px] bg-white dark:bg-[#111] border-l border-zinc-100 dark:border-zinc-900 flex flex-col shrink-0 z-10 animate-slide-in-right shadow-2xl lg:shadow-none">
+                <div className="p-8 border-b border-zinc-100 dark:border-zinc-900 flex flex-col items-center justify-center bg-zinc-50/50 dark:bg-transparent">
+                  <div className="w-24 h-24 rounded-full border-[6px] border-zinc-100 dark:border-zinc-800 flex flex-col items-center justify-center mb-4">
+                    <span className="text-3xl font-bold tracking-tighter">
                       {analysis.summary.plagiarism_percent}%
                     </span>
                   </div>
-                  <span className="block text-xs font-bold uppercase tracking-widest mt-4 text-gray-400">
+                  <span className="block text-[10px] font-bold uppercase tracking-widest text-zinc-400">
                     Similarity Score
                   </span>
                 </div>
 
-                {/* Match Overview */}
-                <div className="flex-1 overflow-y-auto p-6 bg-gray-50/50">
-                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4" /> Match Overview
-                  </h3>
-
-                  <div className="space-y-2">
+                <div className="flex-1 overflow-y-auto p-6">
+                  <h3 className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-6">Match Overview</h3>
+                  <div className="space-y-3">
                     {analysis.sources.map((src, i) => {
                       const color = SOURCE_COLORS[i % SOURCE_COLORS.length];
                       return (
-                        <div
-                          key={i}
-                          className="flex items-center gap-3 p-3 bg-white border border-gray-100 rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-pointer"
-                        >
-                          <div
-                            className={`w-6 h-6 rounded flex items-center justify-center text-xs font-bold text-white ${color.dot}`}
-                          >
+                        <div key={i} className="flex items-center gap-3 p-3 border border-zinc-100 dark:border-zinc-800 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer">
+                          <div className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-bold ${color.dot}`}>
                             {i + 1}
                           </div>
-                          <div className="flex-1 truncate text-sm font-medium text-gray-700">
-                            {src.filename}
-                          </div>
-                          <div className="text-xs font-semibold text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                            {src.matched_words} words
-                          </div>
+                          <div className="flex-1 truncate text-sm font-medium">{src.filename}</div>
+                          <div className="text-xs text-zinc-500">{src.matched_words} w</div>
                         </div>
                       );
                     })}
                   </div>
 
-                  {/* Context Viewer */}
                   {selectedSegment && selectedSegment.source ? (
-                    <div className="mt-8 border border-indigo-100 bg-indigo-50/50 rounded-xl p-5 shadow-sm animate-in fade-in slide-in-from-bottom-4 duration-300">
+                    <div className="mt-8 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl p-5 animate-slide-up" style={{animationDuration: '0.3s'}}>
                       <div className="flex items-center gap-2 mb-3">
-                        <Info className="w-4 h-4 text-indigo-600" />
-                        <h4 className="text-xs font-bold text-indigo-900 uppercase tracking-wider">
-                          Source Context
-                        </h4>
+                        <Info className="w-3.5 h-3.5 text-zinc-400" />
+                        <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Source Context</h4>
                       </div>
-                      <p className="text-sm font-serif italic text-indigo-800/80 leading-relaxed">
+                      <p className="text-sm font-serif italic text-zinc-600 dark:text-zinc-400 leading-relaxed">
                         "...{selectedSegment.matched_db_text}..."
                       </p>
                     </div>
                   ) : (
-                    <div className="mt-8 text-center text-sm text-gray-400 italic px-4">
-                      Click on highlighted text in the document to see the
-                      original source context.
+                    <div className="mt-8 text-center text-sm text-zinc-400 italic px-4">
+                      Click highlighted text to view original context.
                     </div>
                   )}
                 </div>
@@ -450,6 +650,6 @@ export default function PlagiarismDashboard() {
           </>
         )}
       </div>
-    </div>
+    </>
   );
 }

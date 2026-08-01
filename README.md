@@ -9,21 +9,22 @@ However, you can't submit an unfinished draft to Turnitin just to check it. Chec
 
 ---
 
-## ✨ What It Does
+## ✨ Features
 
-* 🔒 **100% Private & Local:** Your draft never leaves your computer. All processing happens on your own hardware.
+* 🔒 **100% Private & Local Database:** Your draft never leaves your computer. All document processing and vector storage (`ChromaDB`) happens on your own hardware, isolated securely per user.
+* 🔐 **Secure Authentication & Rate Limiting:** JWT-based authentication with Bcrypt password hashing (72-byte limit handled) and API rate limiting to prevent brute force attacks.
 * 📚 **Personal Knowledge Base:** You control the database. Upload local PDFs or search and import papers directly from the ArXiv API.
 * 🧠 **Smart Matching:** Uses an AI vector model (`sentence-transformers`) to find similar paragraphs, then uses mathematical N-Gram overlap to highlight the exact copied words.
 * ✂️ **Cleans Academic Text:** Automatically ignores citations (like `[1]`) and math formulas so you don't get penalized for standard academic formatting.
+* 🎨 **Minimalist UI:** A gorgeous, responsive, minimalist frontend built with React, Tailwind CSS, and custom fluid animations. Dark mode persists locally and syncs flawlessly.
 
 ---
 
-## 🛠️ How It Was Built (Tech Stack)
+## 🛠️ Tech Stack
 
-As a student project, I wanted to learn how to combine modern web development with local AI models:
-
-* **Frontend:** React.js (Vite) + Tailwind CSS
-* **Backend:** FastAPI (Python)
+* **Frontend:** React.js (Vite) + Tailwind CSS + Lucide Icons
+* **Backend:** FastAPI (Python) + SQLite
+* **Security:** `slowapi` (Rate Limiting), `bcrypt` (Hashing), `PyJWT` (Auth)
 * **AI & Search:** `ChromaDB` (Vector Database) + `sentence-transformers` (MiniLM)
 * **File Processing:** `pdfplumber` (with custom logic to crop out PDF headers/footers)
 
@@ -33,23 +34,42 @@ As a student project, I wanted to learn how to combine modern web development wi
 
 Since this app runs AI models directly on your machine, it requires about 1GB of RAM and Python installed on your computer.
 
-### 1. Start the Backend
-Clone the repository and Install the Python libraries:
+### 1. Configure Environment Variables
+CheckMate uses email verification and password reset functionality. You need an SMTP account (like a free Gmail App Password) to send these emails.
+
+1. Copy the `.env.example` file to `.env`:
+   ```bash
+   cp .env.example .env
+   ```
+2. Open `.env` and fill in your details:
+   ```env
+   SMTP_EMAIL=your_email@gmail.com
+   SMTP_PASSWORD=your_app_password
+   JWT_SECRET_KEY=your_secure_random_string
+   ```
+   * **SMTP**: If using Gmail, you must generate an "App Password" from your Google Account Security settings. Do not use your regular password.
+   * **JWT_SECRET_KEY**: This is used to encrypt login sessions. You can generate a random string by running `python -c "import secrets; print(secrets.token_hex(32))"` in your terminal. If you leave it blank, the app will automatically generate a temporary one on startup (though you will be logged out every time you restart the server).
+
+### 2. Start the Backend
+Clone the repository and install the Python libraries:
 ```bash
 git clone https://github.com/yourusername/checkmate.git
 cd checkmate
 pip install -r requirements.txt
+```
 
 Run the FastAPI server:
 ```bash
 python api.py
+```
 
-### 2. Start the Frontend
-Open a new terminal window, go to the i folder, and start the React app:
+### 3. Start the Frontend
+Open a new terminal window, go to the `ui` folder, and start the React app:
 ```bash
 cd ui
 npm install
 npm run dev
+```
 
-### 3. Open localhost in your Chrome Browser
-Open http://localhost:5173 in your browser.
+### 4. Open CheckMate
+Open `http://localhost:5173` in your browser. Register a new account, verify it using the link sent to your email, and start analyzing your drafts!

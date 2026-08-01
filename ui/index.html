@@ -9,6 +9,17 @@
   </head>
   <body>
     <div id="root"></div>
+    <div id="error-overlay" style="position: fixed; top: 0; left: 0; background: red; color: white; z-index: 9999; padding: 20px; display: none; white-space: pre-wrap; font-family: monospace;"></div>
+    <script>
+      window.addEventListener('error', function(event) {
+        document.getElementById('error-overlay').style.display = 'block';
+        document.getElementById('error-overlay').innerText += event.message + '\n' + (event.error ? event.error.stack : '') + '\n\n';
+      });
+      window.addEventListener('unhandledrejection', function(event) {
+        document.getElementById('error-overlay').style.display = 'block';
+        document.getElementById('error-overlay').innerText += 'Unhandled Rejection: ' + event.reason + '\n\n';
+      });
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
