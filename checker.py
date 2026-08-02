@@ -1,6 +1,6 @@
 import chromadb
 from sentence_transformers import SentenceTransformer
-from utils import extract_text_from_pdf, get_sliding_windows
+from utils import extract_text_from_document, get_sliding_windows
 import re
 
 from db_manager import get_user_collection
@@ -36,7 +36,7 @@ def calculate_ngram_overlap(student_text, db_text):
 
 def analyze_document(user_id, paper_path):
     collection = get_user_collection(user_id)
-    pages_data = extract_text_from_pdf(paper_path)
+    pages_data = extract_text_from_document(paper_path)
     input_chunks = get_sliding_windows(pages_data)
     
     if not input_chunks: return {"error": "No text extracted."}

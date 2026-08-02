@@ -1,7 +1,7 @@
 import os
 import chromadb
 from sentence_transformers import SentenceTransformer
-from utils import extract_text_from_pdf, get_sliding_windows
+from utils import extract_text_from_document, get_sliding_windows
 
 DB_PATH = "./my_plagiarism_db"
 client = chromadb.PersistentClient(path=DB_PATH)
@@ -9,8 +9,6 @@ model = SentenceTransformer('all-MiniLM-L6-v2')
 
 def get_user_collection(user_id):
     return client.get_or_create_collection(name=f"user_{user_id}_docs")
-
-print("Database Model Loaded.")
 
 def get_all_indexed_sources(user_id):
     """Returns sources currently embedded in ChromaDB, no PDFs needed."""
@@ -24,9 +22,8 @@ def get_all_indexed_sources(user_id):
         return []
 
 def add_file_to_db(user_id, file_path, filename):
-    print(f"Processing {filename} for user {user_id}...")
     collection = get_user_collection(user_id)
-    pages_data = extract_text_from_pdf(file_path)
+    pages_data = extract_text_from_document(file_path)
     if not pages_data:
         return False, "Extraction failed or PDF is empty."
 

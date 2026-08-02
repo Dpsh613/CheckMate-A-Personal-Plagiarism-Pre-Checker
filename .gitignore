@@ -2,6 +2,8 @@
 __pycache__/
 *.pyc
 .env
+.env.*
+!.env.example
 
 # virtual environment
 venv/
@@ -14,6 +16,8 @@ temp_uploads/
 # databases
 my_plagiarism_db/
 *.sqlite
+*.sqlite3
+dataset_pdfs/
 
 .DS_Store
 Thumb.db

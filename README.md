@@ -46,11 +46,17 @@ CheckMate uses email verification and password reset functionality. You need an 
    SMTP_EMAIL=your_email@gmail.com
    SMTP_PASSWORD=your_app_password
    JWT_SECRET_KEY=your_secure_random_string
-   # FRONTEND_URLS=http://localhost:5173,https://your-production-domain.com
+   APP_ENV=development
+   # Production only: use HTTPS URLs and set COOKIE_SECURE=true
+   # FRONTEND_URLS=https://your-production-domain.com
+   # FRONTEND_URL=https://your-production-domain.com
+   # BACKEND_URL=https://api.your-production-domain.com
+   # COOKIE_SECURE=true
    ```
    * **SMTP**: If using Gmail, you must generate an "App Password" from your Google Account Security settings. Do not use your regular password.
-   * **JWT_SECRET_KEY**: This is used to encrypt login sessions. You can generate a random string by running `python -c "import secrets; print(secrets.token_hex(32))"` in your terminal. If you leave it blank, the app will automatically generate a temporary one on startup (though you will be logged out every time you restart the server).
-   * **FRONTEND_URLS (Optional)**: Defaults to localhost. If you want to deploy the app to production, uncomment this and add your deployed frontend URL so the backend allows requests from it.
+   * **JWT_SECRET_KEY**: This signs login sessions. Generate it with `python -c "import secrets; print(secrets.token_hex(32))"`. It is mandatory when `APP_ENV=production`.
+   * **Production**: Set `APP_ENV=production`, use HTTPS for every URL, and set `COOKIE_SECURE=true`. The application refuses insecure production settings.
+   * **Privacy**: Never commit `.env`, `users.sqlite`, `my_plagiarism_db`, `dataset_pdfs`, or `temp_uploads`. These may contain credentials, account records, source text, or drafts.
 
 ### 2. Start the Backend
 Clone the repository and install the Python libraries:

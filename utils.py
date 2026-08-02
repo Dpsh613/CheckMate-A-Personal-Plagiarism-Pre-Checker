@@ -2,6 +2,10 @@ import re
 import unicodedata
 import pdfplumber
 
+MAX_PDF_PAGES = 100
+MAX_TEXT_CHARACTERS = 500_000
+MAX_CHUNKS = 1_500
+
 def normalize_text(text):
     if not text: return ""
     text = unicodedata.normalize('NFKD', text)
@@ -21,9 +25,12 @@ def normalize_text(text):
 
 def extract_text_from_pdf(pdf_path):
     pages_data = []
+    total_characters = 0
     try:
         with pdfplumber.open(pdf_path) as pdf:
             for i, page in enumerate(pdf.pages):
+                if i >= MAX_PDF_PAGES:
+                    break
                 try:
                     # Crop out headers/footers (top 10%, bottom 10%)
                     bbox = page.bbox
@@ -36,12 +43,30 @@ def extract_text_from_pdf(pdf_path):
                     text = page.extract_text()
 
                 if text:
-                    cleaned_text = normalize_text(text)
+                    remaining_characters = MAX_TEXT_CHARACTERS - total_characters
+                    if remaining_characters <= 0:
+                        break
+                    cleaned_text = normalize_text(text)[:remaining_characters]
                     if len(cleaned_text) > 50: 
                         pages_data.append({"page": i + 1, "text": cleaned_text})
-    except Exception as e:
-        print(f"Error reading PDF {pdf_path}: {e}")
+                        total_characters += len(cleaned_text)
+    except Exception:
+        return []
     return pages_data
+
+def extract_text_from_document(file_path):
+    """Extract supported local documents with resource limits applied."""
+    if file_path.lower().endswith(".txt"):
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="strict") as text_file:
+                text = text_file.read(MAX_TEXT_CHARACTERS + 1)
+            if len(text) > MAX_TEXT_CHARACTERS:
+                return []
+            cleaned_text = normalize_text(text)
+            return [{"page": 1, "text": cleaned_text}] if len(cleaned_text) > 50 else []
+        except (OSError, UnicodeDecodeError):
+            return []
+    return extract_text_from_pdf(file_path)
 
 def get_sliding_windows(pages_data, window_size=40, overlap=15):
     """
@@ -60,4 +85,6 @@ def get_sliding_windows(pages_data, window_size=40, overlap=15):
                     "text": chunk,
                     "page": entry['page']
                 })
+                if len(chunks_with_meta) >= MAX_CHUNKS:
+                    return chunks_with_meta
     return chunks_with_meta
