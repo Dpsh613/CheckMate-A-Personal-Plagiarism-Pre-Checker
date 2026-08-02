@@ -1,97 +1,53 @@
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 import os
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from urllib.parse import quote
+
 from dotenv import load_dotenv
 
-load_dotenv()
 
+load_dotenv()
 SMTP_EMAIL = os.getenv("SMTP_EMAIL")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000").rstrip("/")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
 
-def send_verification_email(target_email, token):
+
+def _send_email(target_email: str, subject: str, text: str, html: str) -> bool:
     if not SMTP_EMAIL or not SMTP_PASSWORD:
-        print("SMTP Credentials not configured.")
         return False
-        
-    sender_email = SMTP_EMAIL
-    receiver_email = target_email
-
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = "Verify your CheckMate Account"
-    msg["From"] = sender_email
-    msg["To"] = receiver_email
-
-    verify_link = f"http://localhost:8000/verify?token={token}"
-
-    text = f"Hi there!\n\nPlease verify your email for CheckMate by clicking this link:\n{verify_link}"
-    html = f"""\
-    <html>
-      <body>
-        <h2>Welcome to CheckMate!</h2>
-        <p>Please click the button below to verify your email address:</p>
-        <a href="{verify_link}" style="display:inline-block;padding:10px 20px;background-color:#4f46e5;color:white;text-decoration:none;border-radius:5px;">Verify Email</a>
-        <p><br>If the button doesn't work, copy and paste this link:<br>{verify_link}</p>
-      </body>
-    </html>
-    """
-
-    part1 = MIMEText(text, "plain")
-    part2 = MIMEText(html, "html")
-
-    msg.attach(part1)
-    msg.attach(part2)
-
+    message = MIMEMultipart("alternative")
+    message["Subject"] = subject
+    message["From"] = SMTP_EMAIL
+    message["To"] = target_email
+    message.attach(MIMEText(text, "plain"))
+    message.attach(MIMEText(html, "html"))
     try:
-        server = smtplib.SMTP_SSL("smtp.gmail.com", 465)
-        server.login(sender_email, SMTP_PASSWORD)
-        server.sendmail(sender_email, receiver_email, msg.as_string())
-        server.quit()
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as server:
+            server.login(SMTP_EMAIL, SMTP_PASSWORD)
+            server.sendmail(SMTP_EMAIL, target_email, message.as_string())
         return True
-    except Exception as e:
-        print(f"Error sending email: {e}")
+    except (smtplib.SMTPException, OSError):
         return False
 
-def send_password_reset_email(target_email, token):
-    if not SMTP_EMAIL or not SMTP_PASSWORD:
-        print("SMTP Credentials not configured.")
-        return False
-        
-    sender_email = SMTP_EMAIL
-    receiver_email = target_email
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = "Reset your CheckMate Password"
-    msg["From"] = sender_email
-    msg["To"] = receiver_email
+def send_verification_email(target_email: str, token: str):
+    verify_link = f"{BACKEND_URL}/verify?token={quote(token, safe='')}"
+    return _send_email(
+        target_email,
+        "Verify your CheckMate Account",
+        f"Verify your email address by opening this link:\n{verify_link}",
+        f'<html><body><h2>Welcome to CheckMate!</h2><p>Verify your email address:</p><a href="{verify_link}">Verify Email</a></body></html>',
+    )
 
-    reset_link = f"http://localhost:5173/?reset_token={token}"
 
-    text = f"Hi there!\n\nYou requested a password reset. Click this link to reset it:\n{reset_link}"
-    html = f"""\
-    <html>
-      <body>
-        <h2>Reset Your Password</h2>
-        <p>Please click the button below to reset your CheckMate password:</p>
-        <a href="{reset_link}" style="display:inline-block;padding:10px 20px;background-color:#4f46e5;color:white;text-decoration:none;border-radius:5px;">Reset Password</a>
-        <p><br>If the button doesn't work, copy and paste this link:<br>{reset_link}</p>
-        <p>If you didn't request this, you can safely ignore this email. This link will expire in 1 hour.</p>
-      </body>
-    </html>
-    """
-
-    part1 = MIMEText(text, "plain")
-    part2 = MIMEText(html, "html")
-
-    msg.attach(part1)
-    msg.attach(part2)
-
-    try:
-        server = smtplib.SMTP_SSL("smtp.gmail.com", 465)
-        server.login(sender_email, SMTP_PASSWORD)
-        server.sendmail(sender_email, receiver_email, msg.as_string())
-        server.quit()
-        return True
-    except Exception as e:
-        print(f"Error sending email: {e}")
-        return False
+def send_password_reset_email(target_email: str, token: str):
+    # Fragments are never included in HTTP Referer headers or server access logs.
+    reset_link = f"{FRONTEND_URL}/#reset_token={quote(token, safe='')}"
+    return _send_email(
+        target_email,
+        "Reset your CheckMate Password",
+        f"Reset your password by opening this link:\n{reset_link}\nThis link expires in one hour.",
+        f'<html><body><h2>Reset Your Password</h2><p><a href="{reset_link}">Reset Password</a></p><p>This link expires in one hour.</p></body></html>',
+    )

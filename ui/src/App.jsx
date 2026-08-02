@@ -1,6 +1,13 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import axios from "axios";
 axios.defaults.withCredentials = true;
+axios.interceptors.request.use((config) => {
+  if (["post", "put", "patch", "delete"].includes(config.method?.toLowerCase())) {
+    const csrfToken = sessionStorage.getItem("csrfToken");
+    if (csrfToken) config.headers["X-CSRF-Token"] = csrfToken;
+  }
+  return config;
+});
 import LightRays from "./LightRays";
 import {
   UploadCloud,
@@ -23,7 +30,7 @@ import {
   EyeOff
 } from "lucide-react";
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 // Minimalist Semantic Colors for plagiarism matches
 const SOURCE_COLORS = [
@@ -60,9 +67,10 @@ export default function App() {
     localStorage.setItem("isDarkMode", isDarkMode);
   }, [isDarkMode]);
 
-  const handleLogin = (newEmail) => {
+  const handleLogin = (newEmail, csrfToken) => {
     localStorage.setItem("isAuthenticated", "true");
     localStorage.setItem("email", newEmail);
+    sessionStorage.setItem("csrfToken", csrfToken);
     setIsAuthenticated(true);
     setEmail(newEmail);
   };
@@ -75,9 +83,17 @@ export default function App() {
     }
     localStorage.removeItem("isAuthenticated");
     localStorage.removeItem("email");
+    sessionStorage.removeItem("csrfToken");
     setIsAuthenticated(false);
     setEmail(null);
   };
+
+  useEffect(() => {
+    if (!isAuthenticated || sessionStorage.getItem("csrfToken")) return;
+    axios.get(`${API_BASE}/csrf-token`)
+      .then((res) => sessionStorage.setItem("csrfToken", res.data.csrf_token))
+      .catch(() => handleLogout());
+  }, [isAuthenticated]);
 
   return (
     <div className={isDarkMode ? "dark" : ""}>
@@ -107,8 +123,7 @@ function AuthScreen({ onLogin, isDarkMode, setIsDarkMode }) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const token = urlParams.get('reset_token');
+    const token = new URLSearchParams(window.location.hash.slice(1)).get('reset_token');
     if (token) {
       setAuthMode('reset');
     }
@@ -128,19 +143,18 @@ function AuthScreen({ onLogin, isDarkMode, setIsDarkMode }) {
         setPassword("");
       } else if (authMode === "login") {
         const res = await axios.post(`${API_BASE}/login`, { email, password });
-        onLogin(res.data.email);
+        onLogin(res.data.email, res.data.csrf_token);
       } else if (authMode === "forgot") {
         const res = await axios.post(`${API_BASE}/forgot-password`, { email });
         setSuccessMsg(res.data.message);
         setEmail("");
       } else if (authMode === "reset") {
-        const urlParams = new URLSearchParams(window.location.search);
-        const token = urlParams.get('reset_token');
+        const token = new URLSearchParams(window.location.hash.slice(1)).get('reset_token');
         const res = await axios.post(`${API_BASE}/reset-password`, { token, new_password: password });
         setSuccessMsg(res.data.message);
         setAuthMode("login");
         setPassword("");
-        window.history.replaceState({}, document.title, "/");
+        window.history.replaceState({}, document.title, window.location.pathname);
       }
     } catch (err) {
       if (err.response?.status === 429) {
@@ -308,7 +322,7 @@ function PlagiarismDashboard({ email, onLogout, isDarkMode, setIsDarkMode }) {
   const [arxivResults, setArxivResults] = useState([]);
   const [arxivLoading, setArxivLoading] = useState(false);
 
-  const fetchDbFiles = async () => {
+  const fetchDbFiles = useCallback(async () => {
     try {
       const res = await axios.get(`${API_BASE}/database/files`);
       setDbFiles(res.data.files);
@@ -316,11 +330,11 @@ function PlagiarismDashboard({ email, onLogout, isDarkMode, setIsDarkMode }) {
       if (err.response?.status === 401) onLogout();
       console.error(err);
     }
-  };
+  }, [onLogout]);
 
   useEffect(() => {
     if (viewMode === "database") fetchDbFiles();
-  }, [viewMode]);
+  }, [viewMode, fetchDbFiles]);
 
   const handleAnalyze = async () => {
     if (!file) return;
