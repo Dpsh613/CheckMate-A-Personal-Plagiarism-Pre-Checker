@@ -1,17 +1,16 @@
 import os
 import chromadb
-from sentence_transformers import SentenceTransformer
+from chromadb.config import Settings
+from model_manager import encode_texts
 from utils import extract_text_from_document, get_sliding_windows
 
 DB_PATH = "./my_plagiarism_db"
-client = chromadb.PersistentClient(path=DB_PATH)
-model = SentenceTransformer('all-MiniLM-L6-v2') 
+client = chromadb.PersistentClient(path=DB_PATH, settings=Settings(anonymized_telemetry=False))
 
 def get_user_collection(user_id):
     return client.get_or_create_collection(name=f"user_{user_id}_docs")
 
 def get_all_indexed_sources(user_id):
-    """Returns sources currently embedded in ChromaDB, no PDFs needed."""
     collection = get_user_collection(user_id)
     try:
         data = collection.get(include=["metadatas"])
@@ -35,7 +34,7 @@ def add_file_to_db(user_id, file_path, filename):
     metadatas = [{"source": filename, "page": item['page']} for item in chunks_data]
     ids = [f"{filename}_{i}" for i in range(len(chunks_data))]
     
-    embeddings = model.encode(documents).tolist()
+    embeddings = encode_texts(documents)
 
     collection.add(
         embeddings=embeddings,
