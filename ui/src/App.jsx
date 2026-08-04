@@ -169,6 +169,8 @@ function AuthScreen({ onLogin, isDarkMode, setIsDarkMode }) {
     } catch (err) {
       if (err.response?.status === 429) {
         setError("Too many requests. Please wait a minute and try again.");
+      } else if (!err.response) {
+        setError("Unable to connect to backend server. Please verify backend URL and deployment status.");
       } else {
         let detail = err.response?.data?.detail;
         if (Array.isArray(detail)) {
