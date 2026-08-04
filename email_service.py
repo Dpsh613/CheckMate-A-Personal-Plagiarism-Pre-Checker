@@ -52,13 +52,15 @@ def _send_email(target_email: str, subject: str, text: str, html: str) -> bool:
             server.login(smtp_email, smtp_password)
             server.sendmail(smtp_email, target_email, message.as_string())
         return True
-    except (smtplib.SMTPException, OSError):
+    except Exception as e:
+        print(f"[SMTP ERROR Port 587]: {e}", flush=True)
         try:
             with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as server:
                 server.login(smtp_email, smtp_password)
                 server.sendmail(smtp_email, target_email, message.as_string())
             return True
-        except (smtplib.SMTPException, OSError):
+        except Exception as e2:
+            print(f"[SMTP ERROR Port 465]: {e2}", flush=True)
             return False
 
 
