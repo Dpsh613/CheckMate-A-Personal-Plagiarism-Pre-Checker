@@ -155,9 +155,12 @@ class ArxivDownloadRequest(BaseModel):
 @limiter.limit("5/minute")
 async def register(request: Request, user: UserAuthRequest):
     email = str(user.email)
-    success, msg = create_user(email, user.password)
+    auto_verify = os.getenv("AUTO_VERIFY_LOCAL", "false").lower() == "true"
+    success, msg = create_user(email, user.password, is_verified=auto_verify)
     if not success:
         raise HTTPException(status_code=400, detail=msg)
+    if auto_verify:
+        return {"status": "success", "message": "Account created and verified! You can now log in immediately."}
     token = create_verification_token(email)
     if not send_verification_email(email, token):
         return {"status": "success", "message": "Account created. Configure email delivery, then request a new verification email."}

@@ -170,7 +170,13 @@ function AuthScreen({ onLogin, isDarkMode, setIsDarkMode }) {
       if (err.response?.status === 429) {
         setError("Too many requests. Please wait a minute and try again.");
       } else {
-        setError(err.response?.data?.detail || "Authentication failed");
+        let detail = err.response?.data?.detail;
+        if (Array.isArray(detail)) {
+          detail = detail.map((d) => (typeof d === "object" ? d.msg || JSON.stringify(d) : String(d))).join(", ");
+        } else if (typeof detail === "object" && detail !== null) {
+          detail = detail.msg || JSON.stringify(detail);
+        }
+        setError(typeof detail === "string" && detail ? detail : "Authentication failed");
       }
     } finally {
       setLoading(false);
