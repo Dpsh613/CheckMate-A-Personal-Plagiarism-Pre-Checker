@@ -20,6 +20,7 @@ from auth_db import (
     create_password_reset_token,
     create_user,
     create_verification_token,
+    delete_user_by_email,
     get_user_by_email,
     reset_password_with_token,
     verify_password,
@@ -163,8 +164,23 @@ async def register(request: Request, user: UserAuthRequest):
         return {"status": "success", "message": "Account created and verified! You can now log in immediately."}
     token = create_verification_token(email)
     if not send_verification_email(email, token):
-        return {"status": "success", "message": "Account created. Configure email delivery, then request a new verification email."}
+        return {"status": "success", "message": "Account created. Configure email delivery or request a new verification email."}
     return {"status": "success", "message": "Account created! Please check your email to verify."}
+
+
+@app.post("/resend-verification")
+@limiter.limit("3/minute")
+async def resend_verification(request: Request, user: ForgotPasswordRequest):
+    email = str(user.email).strip().lower()
+    u = get_user_by_email(email)
+    if not u:
+        raise HTTPException(status_code=400, detail="Account not found. Please register first.")
+    if u["is_verified"]:
+        return {"status": "success", "message": "Account is already verified. You can log in directly."}
+    token = create_verification_token(email)
+    if not send_verification_email(email, token):
+        raise HTTPException(status_code=500, detail="Failed to send verification email. Check backend SMTP settings.")
+    return {"status": "success", "message": "Verification email resent! Please check your inbox."}
 
 
 @app.get("/verify")

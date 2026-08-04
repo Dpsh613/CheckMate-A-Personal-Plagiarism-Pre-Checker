@@ -30,21 +30,36 @@ def _get_frontend_url():
 
 
 def _send_email(target_email: str, subject: str, text: str, html: str) -> bool:
-    if not SMTP_EMAIL or not SMTP_PASSWORD:
+    smtp_email = os.getenv("SMTP_EMAIL") or SMTP_EMAIL
+    smtp_password = os.getenv("SMTP_PASSWORD") or SMTP_PASSWORD
+    if not smtp_email or not smtp_password:
         return False
+    # Strip spaces if app password had spaces formatted
+    smtp_password = smtp_password.replace(" ", "").strip()
+    smtp_email = smtp_email.strip()
+
     message = MIMEMultipart("alternative")
     message["Subject"] = subject
-    message["From"] = SMTP_EMAIL
+    message["From"] = smtp_email
     message["To"] = target_email
     message.attach(MIMEText(text, "plain"))
     message.attach(MIMEText(html, "html"))
+
+    # Try Port 587 (TLS - Cloud standard) first, fallback to Port 465 (SSL)
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as server:
-            server.login(SMTP_EMAIL, SMTP_PASSWORD)
-            server.sendmail(SMTP_EMAIL, target_email, message.as_string())
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
+            server.starttls()
+            server.login(smtp_email, smtp_password)
+            server.sendmail(smtp_email, target_email, message.as_string())
         return True
     except (smtplib.SMTPException, OSError):
-        return False
+        try:
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as server:
+                server.login(smtp_email, smtp_password)
+                server.sendmail(smtp_email, target_email, message.as_string())
+            return True
+        except (smtplib.SMTPException, OSError):
+            return False
 
 
 def send_verification_email(target_email: str, token: str):

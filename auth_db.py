@@ -104,11 +104,23 @@ def get_user_by_email(email: str):
     return None
 
 
+def delete_user_by_email(email: str):
+    email = email.strip().lower()
+    with _database() as conn:
+        conn.execute("DELETE FROM users WHERE email = ?", (email,))
+
+
 def create_user(email: str, password: str, is_verified: bool = False):
     email = email.strip().lower()
     password_bytes, error = _password_bytes(password)
     if error:
         return False, error
+
+    existing = get_user_by_email(email)
+    if existing:
+        if existing["is_verified"]:
+            return False, "Email already exists"
+        delete_user_by_email(email)
 
     password_hash = bcrypt.hashpw(password_bytes, bcrypt.gensalt(rounds=BCRYPT_ROUNDS)).decode("utf-8")
     try:
