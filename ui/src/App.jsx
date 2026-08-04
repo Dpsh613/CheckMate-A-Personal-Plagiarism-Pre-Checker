@@ -2,6 +2,10 @@ import React, { useState, useCallback, useEffect } from "react";
 import axios from "axios";
 axios.defaults.withCredentials = true;
 axios.interceptors.request.use((config) => {
+  const accessToken = localStorage.getItem("accessToken");
+  if (accessToken) {
+    config.headers["Authorization"] = `Bearer ${accessToken}`;
+  }
   if (["post", "put", "patch", "delete"].includes(config.method?.toLowerCase())) {
     const csrfToken = sessionStorage.getItem("csrfToken");
     if (csrfToken) config.headers["X-CSRF-Token"] = csrfToken;
@@ -67,10 +71,11 @@ export default function App() {
     localStorage.setItem("isDarkMode", isDarkMode);
   }, [isDarkMode]);
 
-  const handleLogin = (newEmail, csrfToken) => {
+  const handleLogin = (newEmail, csrfToken, accessToken) => {
     localStorage.setItem("isAuthenticated", "true");
     localStorage.setItem("email", newEmail);
-    sessionStorage.setItem("csrfToken", csrfToken);
+    if (accessToken) localStorage.setItem("accessToken", accessToken);
+    if (csrfToken) sessionStorage.setItem("csrfToken", csrfToken);
     setIsAuthenticated(true);
     setEmail(newEmail);
   };
@@ -83,6 +88,7 @@ export default function App() {
     }
     localStorage.removeItem("isAuthenticated");
     localStorage.removeItem("email");
+    localStorage.removeItem("accessToken");
     sessionStorage.removeItem("csrfToken");
     setIsAuthenticated(false);
     setEmail(null);
@@ -92,7 +98,11 @@ export default function App() {
     if (!isAuthenticated || sessionStorage.getItem("csrfToken")) return;
     axios.get(`${API_BASE}/csrf-token`)
       .then((res) => sessionStorage.setItem("csrfToken", res.data.csrf_token))
-      .catch(() => handleLogout());
+      .catch((err) => {
+        if (err.response?.status === 401 && !localStorage.getItem("accessToken")) {
+          handleLogout();
+        }
+      });
   }, [isAuthenticated]);
 
   return (
@@ -143,7 +153,7 @@ function AuthScreen({ onLogin, isDarkMode, setIsDarkMode }) {
         setPassword("");
       } else if (authMode === "login") {
         const res = await axios.post(`${API_BASE}/login`, { email, password });
-        onLogin(res.data.email, res.data.csrf_token);
+        onLogin(res.data.email, res.data.csrf_token, res.data.access_token);
       } else if (authMode === "forgot") {
         const res = await axios.post(`${API_BASE}/forgot-password`, { email });
         setSuccessMsg(res.data.message);

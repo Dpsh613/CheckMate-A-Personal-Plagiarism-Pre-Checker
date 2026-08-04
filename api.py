@@ -69,7 +69,7 @@ app.add_middleware(
     allow_origins=FRONTEND_URLS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE"],
-    allow_headers=["Content-Type", "X-CSRF-Token"],
+    allow_headers=["Content-Type", "X-CSRF-Token", "Authorization", "X-Access-Token"],
 )
 
 
@@ -103,6 +103,12 @@ def create_access_token(user_id: int):
 
 def _read_session(request: Request):
     token = request.cookies.get("access_token")
+    if not token:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:].strip()
+        else:
+            token = request.headers.get("X-Access-Token", "").strip()
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
@@ -186,7 +192,7 @@ async def login(request: Request, response: Response, user: UserAuthRequest):
         max_age=int(ACCESS_TOKEN_LIFETIME.total_seconds()),
         path="/",
     )
-    return {"status": "success", "email": db_user["email"], "csrf_token": csrf_token}
+    return {"status": "success", "email": db_user["email"], "access_token": token, "csrf_token": csrf_token}
 
 
 @app.get("/csrf-token")

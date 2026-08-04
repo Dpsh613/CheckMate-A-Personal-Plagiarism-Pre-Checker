@@ -10,8 +10,23 @@ from dotenv import load_dotenv
 load_dotenv()
 SMTP_EMAIL = os.getenv("SMTP_EMAIL")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000").rstrip("/")
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+def _get_backend_url():
+    if os.getenv("BACKEND_URL"):
+        return os.getenv("BACKEND_URL").rstrip("/")
+    if os.getenv("RAILWAY_PUBLIC_DOMAIN"):
+        return f"https://{os.getenv('RAILWAY_PUBLIC_DOMAIN').rstrip('/')}"
+    return "http://localhost:8000"
+
+
+def _get_frontend_url():
+    if os.getenv("FRONTEND_URL"):
+        return os.getenv("FRONTEND_URL").rstrip("/")
+    frontend_urls = os.getenv("FRONTEND_URLS", "")
+    if frontend_urls:
+        first_url = frontend_urls.split(",")[0].strip()
+        if first_url and first_url != "*":
+            return first_url.rstrip("/")
+    return "http://localhost:5173"
 
 
 def _send_email(target_email: str, subject: str, text: str, html: str) -> bool:
@@ -33,7 +48,7 @@ def _send_email(target_email: str, subject: str, text: str, html: str) -> bool:
 
 
 def send_verification_email(target_email: str, token: str):
-    verify_link = f"{BACKEND_URL}/verify?token={quote(token, safe='')}"
+    verify_link = f"{_get_backend_url()}/verify?token={quote(token, safe='')}"
     return _send_email(
         target_email,
         "Verify your CheckMate Account",
@@ -44,7 +59,7 @@ def send_verification_email(target_email: str, token: str):
 
 def send_password_reset_email(target_email: str, token: str):
     # Fragments are never included in HTTP Referer headers or server access logs.
-    reset_link = f"{FRONTEND_URL}/#reset_token={quote(token, safe='')}"
+    reset_link = f"{_get_frontend_url()}/#reset_token={quote(token, safe='')}"
     return _send_email(
         target_email,
         "Reset your CheckMate Password",
