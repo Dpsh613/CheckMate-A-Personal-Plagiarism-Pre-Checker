@@ -1,11 +1,8 @@
-import chromadb
-from sentence_transformers import SentenceTransformer
-from utils import extract_text_from_document, get_sliding_windows
 import re
-
+import chromadb
+from model_manager import encode_texts
+from utils import extract_text_from_document, get_sliding_windows
 from db_manager import get_user_collection
-
-model = SentenceTransformer('all-MiniLM-L6-v2')
 
 def extract_trigrams(words):
     return {" ".join(words[i:i+3]) for i in range(len(words)-2)}
@@ -48,7 +45,7 @@ def analyze_document(user_id, paper_path):
     detailed_segments = []
 
     input_texts = [item['text'] for item in input_chunks]
-    input_embeddings = model.encode(input_texts, batch_size=32).tolist()
+    input_embeddings = encode_texts(input_texts)
 
     batch_results = collection.query(
         query_embeddings=input_embeddings, 
