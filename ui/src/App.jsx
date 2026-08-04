@@ -144,6 +144,7 @@ function AuthScreen({ onLogin, isDarkMode, setIsDarkMode }) {
     setError("");
     setSuccessMsg("");
     setLoading(true);
+    console.log(`[DEBUG] Attempting to POST to: ${API_BASE}/${authMode}`);
 
     try {
       if (authMode === "register") {
