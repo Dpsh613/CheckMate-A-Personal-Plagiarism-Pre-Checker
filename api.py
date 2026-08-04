@@ -86,6 +86,11 @@ async def add_security_headers(request: Request, call_next):
     return response
 
 
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
+
 def create_access_token(user_id: int):
     expires_at = datetime.now(timezone.utc) + ACCESS_TOKEN_LIFETIME
     csrf_token = secrets.token_urlsafe(32)
