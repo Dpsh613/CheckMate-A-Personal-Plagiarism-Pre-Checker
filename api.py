@@ -49,6 +49,7 @@ if IS_PRODUCTION and any(not url.startswith("https://") for url in FRONTEND_URLS
     raise RuntimeError("Production FRONTEND_URLS must use HTTPS")
 
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", str(IS_PRODUCTION)).lower() == "true"
+COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "none" if (IS_PRODUCTION or COOKIE_SECURE) else "lax")
 if IS_PRODUCTION and not COOKIE_SECURE:
     raise RuntimeError("COOKIE_SECURE must be true when APP_ENV=production")
 
@@ -175,7 +176,7 @@ async def login(request: Request, response: Response, user: UserAuthRequest):
         key="access_token",
         value=token,
         httponly=True,
-        samesite="lax",
+        samesite=COOKIE_SAMESITE,
         secure=COOKIE_SECURE,
         max_age=int(ACCESS_TOKEN_LIFETIME.total_seconds()),
         path="/",
@@ -192,7 +193,7 @@ async def csrf_token(request: Request):
 
 @app.post("/logout", dependencies=[Depends(require_csrf)])
 async def logout(response: Response):
-    response.delete_cookie(key="access_token", httponly=True, samesite="lax", secure=COOKIE_SECURE, path="/")
+    response.delete_cookie(key="access_token", httponly=True, samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE, path="/")
     return {"status": "success", "message": "Logged out successfully"}
 
 
@@ -285,4 +286,6 @@ async def download_arxiv(request: Request, req: ArxivDownloadRequest, user_id: i
 
 
 if __name__ == "__main__":
-    uvicorn.run("api:app", host="127.0.0.1", port=8000, reload=not IS_PRODUCTION)
+    host = os.getenv("HOST", "0.0.0.0" if IS_PRODUCTION else "127.0.0.1")
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run("api:app", host=host, port=port, reload=not IS_PRODUCTION)
