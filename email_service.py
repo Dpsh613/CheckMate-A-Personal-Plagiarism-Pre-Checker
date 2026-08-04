@@ -13,8 +13,6 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 def _get_backend_url():
     if os.getenv("BACKEND_URL"):
         return os.getenv("BACKEND_URL").rstrip("/")
-    if os.getenv("RENDER_EXTERNAL_URL"):
-        return os.getenv("RENDER_EXTERNAL_URL").rstrip("/")
     if os.getenv("RAILWAY_PUBLIC_DOMAIN"):
         return f"https://{os.getenv('RAILWAY_PUBLIC_DOMAIN').rstrip('/')}"
     return "http://localhost:8000"
