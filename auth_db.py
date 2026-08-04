@@ -104,7 +104,7 @@ def get_user_by_email(email: str):
     return None
 
 
-def create_user(email: str, password: str):
+def create_user(email: str, password: str, is_verified: bool = False):
     email = email.strip().lower()
     password_bytes, error = _password_bytes(password)
     if error:
@@ -114,8 +114,8 @@ def create_user(email: str, password: str):
     try:
         with _database() as conn:
             conn.execute(
-                "INSERT INTO users (email, password_hash, is_verified) VALUES (?, ?, 0)",
-                (email, password_hash),
+                "INSERT INTO users (email, password_hash, is_verified) VALUES (?, ?, ?)",
+                (email, password_hash, 1 if is_verified else 0),
             )
         return True, "User created successfully"
     except sqlite3.IntegrityError:
